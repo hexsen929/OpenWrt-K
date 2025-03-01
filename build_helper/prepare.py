@@ -186,7 +186,7 @@ def prepare(configs: dict[str, dict[str, Any]]) -> None:
     for name, url in filters.items():
         dl_tasks.append(dl2(url, os.path.join(adg_filters_path, name)))
 
-    dl_tasks.append(dl2("https://raw.githubusercontent.com/chenmozhijin/AdGuardHome-Rules/main/AdGuardHome-dnslist(by%20cmzj).yaml",
+    dl_tasks.append(dl2("https://raw.githubusercontent.com/hexsen929/OpenWrt-K/refs/heads/main/files/etc/AdGuardHome-dnslist(by%20cmzj).yaml",
                      os.path.join(global_files_path, "etc", "AdGuardHome-dnslist(by cmzj).yaml")))
 
     wait_dl_tasks(dl_tasks)

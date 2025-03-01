@@ -6,43 +6,88 @@ sleep 5
 [ ! -s "/etc/config/passwall" ] && sleep 5
 [ ! -s "/etc/config/passwall" ] && sleep 5
 [ ! -s "/etc/config/passwall" ] && cp -f /usr/share/passwall/0_default_config /etc/config/passwall
-if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-passwall - ")" -ne '0' ];then
-uci set passwall.@global[0].dns_mode='dns2tcp'
-uci set passwall.@global[0].tcp_proxy_mode='gfwlist'
-if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-adguardhome")" -ne '0' ];then
+
+# 检查是否安装了 PassWall，如果安装了则禁用 OpenClash
+if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-passwall")" -ne '0' ]; then
+  if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-openclash")" -ne '0' ]; then
+    /etc/init.d/openclash stop
+    /etc/init.d/openclash disable
+  fi
+
+  # 基本配置
+  uci set passwall.@global[0].enabled='1'
+  uci set passwall.@global[0].tcp_node='myshunt'
+  uci set passwall.@global[0].udp_node='tcp'
+  uci set passwall.@global[0].dns_mode='udp'
+  uci set passwall.@global[0].tcp_proxy_mode='gfwlist'
+  uci set passwall.@global[0].udp_proxy_mode='chnroute'
+  uci set passwall.@global[0].when_chnroute_default_dns='chinadns_ng'
+  
+  # DNS配置：优先使用 AdGuardHome，其次是 mosdns
+  if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-adguardhome")" -ne '0' ]; then
+    uci set passwall.@global[0].remote_dns='127.0.0.1:53'
+    uci set passwall.@global[0].direct_dns_udp='127.0.0.1:53'
     uci set passwall.@global[0].tcp_node_socks_port='1070'
-    uci set passwall.@global[0].remote_dns='127.0.0.1:1745'
+  elif [ "$( opkg list-installed 2>/dev/null| grep -c "^mosdns")" -ne '0' ]; then
+    uci set passwall.@global[0].remote_dns='127.0.0.1:5335'
+    uci set passwall.@global[0].direct_dns_udp='127.0.0.1:5335'
+  fi
+
+  # 转发配置
+  uci set passwall.@global_forwarding[0].use_nft='1'
+  uci set passwall.@global_forwarding[0].ipv6_tproxy='1'
+  uci set passwall.@global_forwarding[0].tcp_proxy_way='tproxy'
+
+  # 其他配置
+  uci set passwall.@global_other[0].auto_detection_time='tcping'
+  uci set passwall.@global_other[0].show_node_info='1'
+  uci set passwall.@global_other[0].nodes_ping='auto_ping tcping info'
+
+  # 规则配置
+  uci set passwall.@global_rules[0].gfwlist_update='1'
+  uci set passwall.@global_rules[0].auto_update='1'
+  uci set passwall.@global_rules[0].week_update='7'
+  uci set passwall.@global_rules[0].time_update='0'
+  
+  # 更新路由规则URL
+  uci del_list passwall.@global_rules[0].chnroute_url='https://ispip.clang.cn/all_cn_cidr.txt'
+  uci del_list passwall.@global_rules[0].chnroute_url='https://fastly.jsdelivr.net/gh/soffchen/GeoIP2-CN@release/CN-ip-cidr.txt'
+  uci del_list passwall.@global_rules[0].chnroute_url='https://fastly.jsdelivr.net/gh/Hackl0us/GeoIP2-CN@release/CN-ip-cidr.txt'
+  uci del_list passwall.@global_rules[0].gfwlist_url='https://fastly.jsdelivr.net/gh/YW5vbnltb3Vz/domain-list-community@release/gfwlist.txt'
+  uci del_list passwall.@global_rules[0].gfwlist_url='https://fastly.jsdelivr.net/gh/gfwlist/gfwlist/gfwlist.txt'
+  uci del_list passwall.@global_rules[0].gfwlist_url='https://fastly.jsdelivr.net/gh/Loukky/gfwlist-by-loukky/gfwlist.txt'
+  
+  uci add_list passwall.@global_rules[0].chnroute_url='https://ispip.clang.cn/all_cn_cidr.txt'
+  uci add_list passwall.@global_rules[0].chnroute_url='https://fastly.jsdelivr.net/gh/soffchen/GeoIP2-CN@release/CN-ip-cidr.txt'
+  uci add_list passwall.@global_rules[0].chnroute_url='https://fastly.jsdelivr.net/gh/Hackl0us/GeoIP2-CN@release/CN-ip-cidr.txt'
+  uci add_list passwall.@global_rules[0].gfwlist_url='https://fastly.jsdelivr.net/gh/YW5vbnltb3Vz/domain-list-community@release/gfwlist.txt'
+  uci add_list passwall.@global_rules[0].gfwlist_url='https://fastly.jsdelivr.net/gh/gfwlist/gfwlist/gfwlist.txt'
+  uci add_list passwall.@global_rules[0].gfwlist_url='https://fastly.jsdelivr.net/gh/Loukky/gfwlist-by-loukky/gfwlist.txt'
+
+  # 订阅配置
+  uci set passwall.@global_subscribe[0].filter_keyword_mode='1'
+  uci set passwall.@global_subscribe[0].subscribe_proxy='1'
+  uci set passwall.@global_subscribe[0].ss_type='sing-box'
+  uci set passwall.@global_subscribe[0].trojan_type='sing-box'
+  uci set passwall.@global_subscribe[0].vmess_type='sing-box'
+  uci set passwall.@global_subscribe[0].vless_type='sing-box'
+  uci set passwall.@global_subscribe[0].hysteria2_type='sing-box'
+  uci add_list passwall.@global_subscribe[0].filter_discard_list='过期时间'
+  uci add_list passwall.@global_subscribe[0].filter_discard_list='剩余流量'
+  uci add_list passwall.@global_subscribe[0].filter_discard_list='QQ群'
+  uci add_list passwall.@global_subscribe[0].filter_discard_list='官网'
+  uci add_list passwall.@global_subscribe[0].filter_discard_list='导航'
+
+  # 配置自动切换
+  uci set passwall.@auto_switch[0].retry_num='3'
+  uci set passwall.@auto_switch[0].shunt_logic='1'
+  uci set passwall.@auto_switch[0].connect_timeout='1'
+  uci set passwall.@auto_switch[0].restore_switch='1'
+  uci set passwall.@auto_switch[0].testing_time='1'
+  uci set passwall.@auto_switch[0].enable='1'
+
+  uci commit passwall
+  /etc/init.d/passwall restart
 fi
-uci set passwall.@global[0].when_chnroute_default_dns='chinadns_ng'
-uci set passwall.@global[0].udp_proxy_mode='chnroute'
-uci set passwall.@global_forwarding[0].use_nft='1'
-uci set passwall.@global_other[0].nodes_ping='auto_ping tcping info'
-uci set passwall.@global_rules[0].gfwlist_update='1'
-uci set passwall.@global_rules[0].auto_update='1'
-uci set passwall.@global_rules[0].week_update='7'
-uci del_list passwall.@global_rules[0].chnroute_url='https://ispip.clang.cn/all_cn_cidr.txt'
-uci del_list passwall.@global_rules[0].chnroute_url='https://fastly.jsdelivr.net/gh/soffchen/GeoIP2-CN@release/CN-ip-cidr.txt'
-uci del_list passwall.@global_rules[0].chnroute_url='https://fastly.jsdelivr.net/gh/Hackl0us/GeoIP2-CN@release/CN-ip-cidr.txt'
-uci del_list passwall.@global_rules[0].gfwlist_url='https://fastly.jsdelivr.net/gh/YW5vbnltb3Vz/domain-list-community@release/gfwlist.txt'
-uci del_list passwall.@global_rules[0].gfwlist_url='https://fastly.jsdelivr.net/gh/gfwlist/gfwlist/gfwlist.txt'
-uci del_list passwall.@global_rules[0].gfwlist_url='https://fastly.jsdelivr.net/gh/Loukky/gfwlist-by-loukky/gfwlist.txt'
-uci add_list passwall.@global_rules[0].chnroute_url='https://ispip.clang.cn/all_cn_cidr.txt'
-uci add_list passwall.@global_rules[0].chnroute_url='https://fastly.jsdelivr.net/gh/soffchen/GeoIP2-CN@release/CN-ip-cidr.txt'
-uci add_list passwall.@global_rules[0].chnroute_url='https://fastly.jsdelivr.net/gh/Hackl0us/GeoIP2-CN@release/CN-ip-cidr.txt'
-uci add_list passwall.@global_rules[0].gfwlist_url='https://fastly.jsdelivr.net/gh/YW5vbnltb3Vz/domain-list-community@release/gfwlist.txt'
-uci add_list passwall.@global_rules[0].gfwlist_url='https://fastly.jsdelivr.net/gh/gfwlist/gfwlist/gfwlist.txt'
-uci add_list passwall.@global_rules[0].gfwlist_url='https://fastly.jsdelivr.net/gh/Loukky/gfwlist-by-loukky/gfwlist.txt'
-uci set passwall.@global_rules[0].time_update='0'
-uci set passwall.@global_subscribe[0].filter_keyword_mode='1'
-uci set passwall.@global_subscribe[0].subscribe_proxy='1'
-uci add_list passwall.@global_subscribe[0].filter_discard_list='导航'
-uci set passwall.@auto_switch[0].retry_num='3'
-uci set passwall.@auto_switch[0].shunt_logic='1'
-uci set passwall.@auto_switch[0].connect_timeout='1'
-uci set passwall.@auto_switch[0].restore_switch='1'
-uci set passwall.@auto_switch[0].testing_time='1'
-uci set passwall.@auto_switch[0].enable='1'
-uci commit passwall
-/etc/init.d/passwall restart
-fi
+
 exit 0

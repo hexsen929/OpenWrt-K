@@ -1,5 +1,5 @@
 #!/bin/sh
-uci set network.lan.ipaddr="192.168.1.1"
+uci set network.lan.ipaddr="192.168.100.1"
 uci commit network
 /etc/init.d/network restart
 sed -i "/^DISTRIB_DESCRIPTION='/s/'$/ Compiled by 沉默の金'/" /etc/openwrt_release
@@ -8,7 +8,72 @@ sed -i "/^DISTRIB_DESCRIPTION='/s/'$/ Compiled by 沉默の金'/" /etc/openwrt_r
 until [ "$( opkg list-installed 2>/dev/null| grep -c "^kernel")" -ne '0' ]; do
   sleep 1
 done
-if [ "$( opkg list-installed 2>/dev/null| grep -c "^smartdns")" -ne '0' ] && [ ! "$(uci -q get smartdns.@server[0].name)" = "清华大学TUNA协会" ];then
+
+# 检查是否安装了 MosDNS
+if [ "$( opkg list-installed 2>/dev/null| grep -c "^mosdns")" -ne '0' ]; then
+  # 配置 MosDNS
+  uci set mosdns.config=mosdns
+  uci set mosdns.config.enabled='1'
+  uci set mosdns.config.listen_port='5335'
+  
+  # 如果没有安装 AdGuardHome，则设置 redirect 为 1
+  if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-adguardhome")" -eq '0' ]; then
+    uci set mosdns.config.redirect='1'
+  fi
+  
+  uci set mosdns.config.geo_auto_update='1'
+  uci set mosdns.config.geo_update_week_time='*'
+  uci set mosdns.config.geo_update_day_time='2'
+  uci set mosdns.config.prefer_ipv4='1'
+  uci set mosdns.config.configfile='/var/etc/mosdns.json'
+  uci set mosdns.config.log_level='info'
+  uci set mosdns.config.logfile='/var/log/mosdns.log'
+  uci set mosdns.config.cache_survival_time='86400'
+  uci set mosdns.config.concurrent='3'
+  uci set mosdns.config.idle_timeout='30'
+  uci set mosdns.config.minimal_ttl='0'
+  uci set mosdns.config.maximum_ttl='0'
+  uci set mosdns.config.custom_local_dns='1'
+  uci set mosdns.config.enable_pipeline='1'
+  uci set mosdns.config.insecure_skip_verify='0'
+  uci set mosdns.config.dns_leak='1'
+  uci set mosdns.config.cloudflare='0'
+  uci set mosdns.config.listen_port_api='9091'
+  uci set mosdns.config.bootstrap_dns='223.5.5.5'
+  uci set mosdns.config.apple_optimization='1'
+  uci set mosdns.config.enable_ecs_remote='0'
+  uci set mosdns.config.log_file='/var/log/mosdns.log'
+  uci set mosdns.config.cache='1'
+  uci set mosdns.config.geoip_type='geoip'
+  uci set mosdns.config.github_proxy='https://github.moeyy.xyz'
+  uci set mosdns.config.cache_size='190150'
+  uci set mosdns.config.lazy_cache_ttl='86400'
+  uci set mosdns.config.dump_file='0'
+  uci add_list mosdns.config.local_dns='223.5.5.5'
+  uci add_list mosdns.config.local_dns='223.6.6.6'
+  uci add_list mosdns.config.local_dns='101.6.6.6'
+  uci add_list mosdns.config.local_dns='114.114.114.114'
+  uci add_list mosdns.config.local_dns='https://dns.alidns.com/dns-query'
+  uci add_list mosdns.config.local_dns='https://doh.360.cn/dns-query'
+  uci add_list mosdns.config.local_dns='https://doh.pub/dns-query'
+  uci add_list mosdns.config.local_dns='180.76.76.76'
+  uci add_list mosdns.config.local_dns='101.226.4.6'
+  uci add_list mosdns.config.local_dns='119.29.29.29'
+  uci add_list mosdns.config.remote_dns='8.8.4.4:853'
+  uci add_list mosdns.config.remote_dns='1.1.1.1:853'
+  uci add_list mosdns.config.remote_dns='9.9.9.9:853'
+  uci add_list mosdns.config.remote_dns='[2620:fe::fe]:9953'
+  uci add_list mosdns.config.remote_dns='https://dns.google/dns-query'
+  uci add_list mosdns.config.remote_dns='https://dns.cloudflare.com/dns-query'
+  uci add_list mosdns.config.remote_dns='https://private.canadianshield.cira.ca/dns-query'
+  uci add_list mosdns.config.remote_dns='https://dns.quad9.net/dns-query'
+  uci add_list mosdns.config.remote_dns='https://odvr.nic.cz/doh'
+  uci commit mosdns
+  /etc/init.d/mosdns restart
+fi
+
+# 检查是否安装了 SmartDNS，并且只在没有 MosDNS 时配置
+if [ "$( opkg list-installed 2>/dev/null| grep -c "^mosdns")" -eq '0' ] && [ "$( opkg list-installed 2>/dev/null| grep -c "^smartdns")" -ne '0' ] && [ ! "$(uci -q get smartdns.@server[0].name)" = "清华大学TUNA协会" ];then
   uci set smartdns.@smartdns[0].prefetch_domain='1'
   uci set smartdns.@smartdns[0].port='6053'
   uci set smartdns.@smartdns[0].seconddns_port='5335'
@@ -213,21 +278,40 @@ if [ "$( opkg list-installed 2>/dev/null| grep -c "^smartdns")" -ne '0' ] && [ !
   uci commit smartdns
   /etc/init.d/smartdns restart
 fi
+
+# 检查是否安装了 AdGuardHome
 if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-adguardhome")" -ne '0' ];then
-uci batch << EOI
+  # 禁用 dnsmasq 的 DNS 功能，保留 DHCP
+  uci set dhcp.@dnsmasq[0].port='0'
+  uci set dhcp.@dnsmasq[0].cachesize='0'
+  uci commit dhcp
+  /etc/init.d/dnsmasq restart
+  
+  # 配置 AdGuardHome
+  uci batch << EOI
 set AdGuardHome.AdGuardHome.enabled='1'
 set AdGuardHome.AdGuardHome.httpport='3000'
 set AdGuardHome.AdGuardHome.binpath='/usr/bin/AdGuardHome/AdGuardHome'
 set AdGuardHome.AdGuardHome.waitonboot='1'
-set AdGuardHome.AdGuardHome.redirect='dnsmasq-upstream'
+set AdGuardHome.AdGuardHome.redirect='exchange'
 set AdGuardHome.AdGuardHome.ucitracktest='1'
-set AdGuardHome.AdGuardHome.old_redirect='dnsmasq-upstream'
-set AdGuardHome.AdGuardHome.old_port='1745'
+set AdGuardHome.AdGuardHome.old_redirect='exchange'
+set AdGuardHome.AdGuardHome.old_port='53'
 set AdGuardHome.AdGuardHome.old_enabled='1'
 EOI
   uci commit AdGuardHome
+
+  # 根据是否安装 mosdns 来设置上游 DNS
+  if [ "$( opkg list-installed 2>/dev/null| grep -c "^mosdns")" -ne '0' ]; then
+    sed -i 's/upstream_dns:.*/upstream_dns:\n  - "127.0.0.1:5335"/' /etc/AdGuardHome.yaml
+  else
+    sed -i 's/upstream_dns:.*/upstream_dns:\n  - "127.0.0.1:6053"\n  - "127.0.0.1:5335"/' /etc/AdGuardHome.yaml
+  fi
+  sed -i 's/upstream_dns_file:.*/upstream_dns_file: ""/' /etc/AdGuardHome.yaml
+  
   /etc/init.d/AdGuardHome restart
 fi
+
 if [ "$( opkg list-installed 2>/dev/null| grep -c "^aria2")" -ne '0' ];then
   uci set aria2.main.user='root'
   uci set aria2.main.config_dir='/etc/aria2'
@@ -238,12 +322,8 @@ if [ "$( opkg list-installed 2>/dev/null| grep -c "^aria2")" -ne '0' ];then
   uci commit aria2
   /etc/init.d/aria2 restart
 fi
-if [ "$( opkg list-installed 2>/dev/null| grep -c "^dnsmasq")" -ne '0' ];then
-  uci set dhcp.@dnsmasq[0].cachesize='0'
-  uci commit dhcp
-  /etc/init.d/dnsmasq restart
-fi
-if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-openclash")" -ne '0' ] && [ "$(uci show openclash|grep -c ".port='1745'")" -ne '2' ];then
+
+if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-openclash")" -ne '0' ] && [ "$(uci show openclash|grep -c ".port='1745'")" -ne '2' ] && [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-passwall")" -eq '0' ];then
   if [ "$(grep -c "^代理规则(by 沉默の金)" /usr/share/openclash/res/rule_providers.list)" -eq '0' ];then
       sed -i '1i 代理规则(by 沉默の金),沉默の金,classical,chenmozhijin/OpenWrt-K/main/files/etc/openclash/rule_provider/,ProxyRule-chenmozhijin.yaml' "/usr/share/openclash/res/rule_providers.list"
   fi
@@ -264,13 +344,13 @@ if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-openclash")" -ne '0
     uci set openclash.@dns_servers[-1].group='nameserver'
     uci set openclash.@dns_servers[-1].type='udp'
     uci set openclash.@dns_servers[-1].ip='127.0.0.1'
-    uci set openclash.@dns_servers[-1].port='1745'
+    uci set openclash.@dns_servers[-1].port='53'
     uci add openclash dns_servers
     uci set openclash.@dns_servers[-1].enabled='1'
     uci set openclash.@dns_servers[-1].group='fallback'
     uci set openclash.@dns_servers[-1].type='udp'
     uci set openclash.@dns_servers[-1].ip='127.0.0.1'
-    uci set openclash.@dns_servers[-1].port='1745'
+    uci set openclash.@dns_servers[-1].port='53'
     uci set openclash.config.enable_custom_dns='1'
   fi
   uci set openclash.config.enable_redirect_dns='1'
@@ -317,10 +397,17 @@ if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-openclash")" -ne '0
   uci set openclash.@rule_provider_config[-1].config='all'
   uci add_list openclash.@rule_provider_config[-1].rule_name='代理规则(by 沉默の金)'
   uci commit openclash
+  # 如果安装了 PassWall，停止并禁用 OpenClash
+  if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-passwall")" -ne '0' ]; then
+    /etc/init.d/openclash stop
+    /etc/init.d/openclash disable
+  fi
 fi
+
 if [ "$(grep -c "/usr/share/cmzj/openwrt-k_tool.sh update rules" /etc/crontabs/root)" -eq '0' ];then
   echo "0 2 * * * /usr/share/cmzj/openwrt-k_tool.sh update rules" >>/etc/crontabs/root
 fi
+
 ln -s /usr/share/cmzj/openwrt-k_tool.sh /bin/openwrt-k
 chmod +x /usr/share/cmzj/openwrt-k_tool.sh
 uci commit

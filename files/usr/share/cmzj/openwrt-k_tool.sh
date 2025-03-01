@@ -114,7 +114,7 @@ update_rule(){
         mkdir -p $TMPDIR/update/rule/adguardhome
         cd $TMPDIR/update/rule/adguardhome
         [[ -d $TMPDIR ]] && rm -rf $TMPDIR/update/rule/adguardhome/* || exit 1
-        curl -s -L --retry 6 --connect-timeout 20 "https://raw.githubusercontent.com/chenmozhijin/AdGuardHome-Rules/main/AdGuardHome-dnslist(by%20cmzj).yaml" -o "AdGuardHomednslist" || download_failed
+        curl -s -L --retry 6 --connect-timeout 20 "https://raw.githubusercontent.com/hexsen929/OpenWrt-K/refs/heads/main/files/etc/AdGuardHome-dnslist(by%20cmzj).yaml" -o "AdGuardHomednslist" || download_failed
         cat ./AdGuardHomednslist > /etc/AdGuardHome-dnslist"(by cmzj)".yaml
         /etc/init.d/AdGuardHome restart
         echo "更新adguardhome上游 DNS 服务器分流规则（/etc/AdGuardHome-dnslist(by cmzj).yaml)完成"
@@ -125,9 +125,9 @@ update_rule(){
         echo "开始更新openclash直连规则(by 沉默の金)与代理规则(by 沉默の金)"
         mkdir -p $TMPDIR/update/rule/openclash
         cd $TMPDIR/update/rule/openclash
-        curl -s -L --retry 3 https://raw.githubusercontent.com/chenmozhijin/OpenWrt-K/main/files/etc/openclash/rule_provider/ProxyRule-chenmozhijin.yaml -o ProxyRule-chenmozhijin.yaml || download_failed
-        curl -s -L --retry 3 https://raw.githubusercontent.com/chenmozhijin/OpenWrt-K/main/files/etc/openclash/rule_provider/DirectRule-chenmozhijin.yaml -o DirectRule-chenmozhijin.yaml || download_failed
-        curl -s -L --retry 3 https://raw.githubusercontent.com/chenmozhijin/OpenWrt-K/main/files/etc/openclash/rule_provider/HKMOTWRule-chenmozhijin.yaml -o HKMOTWRule-chenmozhijin.yaml || download_failed
+        curl -s -L --retry 3 https://raw.githubusercontent.com/hexsen929/OpenWrt-K/main/files/etc/openclash/rule_provider/ProxyRule-chenmozhijin.yaml -o ProxyRule-chenmozhijin.yaml || download_failed
+        curl -s -L --retry 3 https://raw.githubusercontent.com/hexsen929/OpenWrt-K/main/files/etc/openclash/rule_provider/DirectRule-chenmozhijin.yaml -o DirectRule-chenmozhijin.yaml || download_failed
+        curl -s -L --retry 3 https://raw.githubusercontent.com/hexsen929/OpenWrt-K/main/files/etc/openclash/rule_provider/HKMOTWRule-chenmozhijin.yaml -o HKMOTWRule-chenmozhijin.yaml || download_failed
         if [ "$(pidof clash)" ] ;then
             echo "检测到clash启动，关闭openclash"
             /etc/init.d/openclash stop
