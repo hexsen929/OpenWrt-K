@@ -282,7 +282,7 @@ fi
 # 检查是否安装了 AdGuardHome
 if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-adguardhome")" -ne '0' ];then
   # 禁用 dnsmasq 的 DNS 功能，保留 DHCP
-  uci set dhcp.@dnsmasq[0].port='0'
+  uci set dhcp.@dnsmasq[0].port='5353'
   uci set dhcp.@dnsmasq[0].cachesize='0'
   uci commit dhcp
   /etc/init.d/dnsmasq restart
@@ -303,11 +303,11 @@ EOI
 
   # 根据是否安装 mosdns 来设置上游 DNS
   if [ "$( opkg list-installed 2>/dev/null| grep -c "^mosdns")" -ne '0' ]; then
-    sed -i 's/upstream_dns:.*/upstream_dns:\n  - "127.0.0.1:5335"/' /etc/AdGuardHome.yaml
+    sed -i 's/upstream_dns:.*/upstream_dns:\n  - 127.0.0.1:5335/' /etc/AdGuardHome.yaml
   else
-    sed -i 's/upstream_dns:.*/upstream_dns:\n  - "127.0.0.1:6053"\n  - "127.0.0.1:5335"/' /etc/AdGuardHome.yaml
+    sed -i 's/upstream_dns:.*/upstream_dns:\n  - 127.0.0.1:6053\n  - 127.0.0.1:5335/' /etc/AdGuardHome.yaml
   fi
-  sed -i 's/upstream_dns_file:.*/upstream_dns_file: ""/' /etc/AdGuardHome.yaml
+  sed -i 's/upstream_dns_file:.*/upstream_dns_file:/' /etc/AdGuardHome.yaml
   
   /etc/init.d/AdGuardHome restart
 fi
