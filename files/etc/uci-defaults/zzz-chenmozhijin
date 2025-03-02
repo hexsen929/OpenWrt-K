@@ -296,7 +296,7 @@ set AdGuardHome.AdGuardHome.waitonboot='1'
 set AdGuardHome.AdGuardHome.redirect='exchange'
 set AdGuardHome.AdGuardHome.ucitracktest='1'
 set AdGuardHome.AdGuardHome.old_redirect='exchange'
-set AdGuardHome.AdGuardHome.old_port='53'
+set AdGuardHome.AdGuardHome.old_port='1754'
 set AdGuardHome.AdGuardHome.old_enabled='1'
 EOI
   uci commit AdGuardHome
