@@ -303,10 +303,17 @@ EOI
 
   # 根据是否安装 mosdns 来设置上游 DNS
   if [ "$( opkg list-installed 2>/dev/null| grep -c "^mosdns")" -ne '0' ]; then
-    sed -i 's/upstream_dns:.*/upstream_dns:\n  - 127.0.0.1:5335/' /etc/AdGuardHome.yaml
+    # 先清空 upstream_dns 部分
+    sed -i '/upstream_dns:/,/^[a-z]/ {/upstream_dns:/!{/^[a-z]/!d}}' /etc/AdGuardHome.yaml
+    # 设置新的 upstream_dns
+    sed -i 's/upstream_dns:.*/upstream_dns:\n    - 127.0.0.1:5335/' /etc/AdGuardHome.yaml
   else
-    sed -i 's/upstream_dns:.*/upstream_dns:\n  - 127.0.0.1:6053\n  - 127.0.0.1:5335/' /etc/AdGuardHome.yaml
+    # 先清空 upstream_dns 部分
+    sed -i '/upstream_dns:/,/^[a-z]/ {/upstream_dns:/!{/^[a-z]/!d}}' /etc/AdGuardHome.yaml
+    # 设置新的 upstream_dns
+    sed -i 's/upstream_dns:.*/upstream_dns:\n    - 127.0.0.1:6053\n    - 127.0.0.1:5335/' /etc/AdGuardHome.yaml
   fi
+  # 清空 upstream_dns_file
   sed -i 's/upstream_dns_file:.*/upstream_dns_file:/' /etc/AdGuardHome.yaml
   
   /etc/init.d/AdGuardHome restart
