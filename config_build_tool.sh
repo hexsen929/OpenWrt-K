@@ -161,7 +161,7 @@ function input_parameters() {
     # 提示用户输入OpenWrt-K存储库地址，并保存到OpenWrt_K_url变量
     while true; do
         inputbox="输入OpenWrt-K存储库地址,本工具导入该存储库中的openwrt与OpenWrt-K拓展配置"
-        OpenWrt_K_url="$(whiptail --title "输入存储库地址" --inputbox "$inputbox" 10 80 https://github.com/hexsen929/OpenWrt-K 3>&1 1>&2 2>&3)"
+        OpenWrt_K_url="$(whiptail --title "输入存储库地址" --inputbox "$inputbox" 10 80 https://github.com/chenmozhijin/OpenWrt-K 3>&1 1>&2 2>&3)"
         exitstatus=$?
         OpenWrt_K_url=$(echo $OpenWrt_K_url|sed  -e 's/^[ \t]*//g' -e's/[ \t]*$//g')
         if [ $exitstatus != 0 ]; then
@@ -322,7 +322,7 @@ function import_ext_packages_config() {
         return 11
     fi
     if [ $OPTION = 1 ]; then
-        DOWNLOAD_URL=https://github.com/hexsen929/OpenWrt-K/raw/refs/heads/main/config/default-extpackages.config
+        DOWNLOAD_URL=https://raw.githubusercontent.com/chenmozhijin/OpenWrt-K/main/config/default-extpackages.config
     elif [ $OPTION = 2 ]; then
         # 从配置文件buildconfig.config中提取OpenWrt-K仓库的URL
         OpenWrt_K_url=$(grep "^OpenWrt_K_url=" buildconfig.config|sed  "s/OpenWrt_K_url=//")
