@@ -66,7 +66,7 @@ function install_dependencies() {
             # 检查并安装缺少的依赖包（基于yum包管理器）
             for package_name in bzip2 gcc gcc-c++ git make ncurses-devel patch rsync tar unzip wget which diffutils python2 python3 perl-base perl-Data-Dumper perl-File-Compare perl-File-Copy perl-FindBin perl-IPC-Cmd perl-Thread-Queue; do
             if [ "$(yum list installed 2>/dev/null| grep -c "^${package_name}")" -eq '0' ];then
-                if test ${n} = 0; 键，然后
+                if test ${n} = 0; then
                     echo $package_name > $TMPDIR/install.list
                     n=$(($n+1))
                 else
@@ -78,14 +78,14 @@ function install_dependencies() {
             ;;
         *)
             # 如果不支持自动安装依赖的系统，则提示用户使用ubuntu或手动安装openwrt依赖
-            if ! (whiptail --title "确认" --yes-button "我已安装全部依赖" --no-button "退出" --yesno "不支持自动安装依赖的系统，建议使用ubuntu或手动安装openwrt依赖。openwrt所需依赖见\nhttps://openwrt.org/docs/guide-developer/toolchain/install-buildsystem#linux_gnu-linux_distributions" 10 104) 键，然后
+            if ! (whiptail --title "确认" --yes-button "我已安装全部依赖" --no-button "退出" --yesno "不支持自动安装依赖的系统，建议使用ubuntu或手动安装openwrt依赖。openwrt所需依赖见\nhttps://openwrt.org/docs/guide-developer/toolchain/install-buildsystem#linux_gnu-linux_distributions" 10 104) then
                 exit 0
             fi
             ;;
         esac
-    if [ -e "$TMPDIR/install.list" ]; 键，然后
+    if [ -e "$TMPDIR/install.list" ]; then
         # 用户确认是否安装缺少的依赖包
-        if (whiptail --title "选择" --yes-button "安装" --no-button "退出" --yesno "是否安装$(cat $TMPDIR/install.list|sed "s/ /、/g")，它们是此脚本的依赖" 10 60) 键，然后
+        if (whiptail --title "选择" --yes-button "安装" --no-button "退出" --yesno "是否安装$(cat $TMPDIR/install.list|sed "s/ /、/g")，它们是此脚本的依赖" 10 60) then
             source /etc/os-release
             case $PM in
             apt)
@@ -103,11 +103,11 @@ function install_dependencies() {
             exit 0
         fi
     fi
-    if ! type uniq &>/dev/null ; 键，然后
+    if ! type uniq &>/dev/null ; then
         echo "未找到uniq命令"
         exit 1
     fi
-    if ! type sort &>/dev/null ; 键，然后
+    if ! type sort &>/dev/null ; then
         echo "未找到sort命令"
         exit 1
     fi
@@ -119,7 +119,7 @@ function detect_github_api_rate_limit() {
 remaining_requests=$(curl -s -L -i https://api.github.com/users/octocat) || network_error
 remaining=$(echo "$remaining_requests"|sed -n "/^x-ratelimit-remaining:/p"|sed "s/.*: //"| awk '{print int($0)}')
 # 如果剩余请求次数少于5次，输出超出API速率限制的提示信息
-if [ "$remaining" -lt "5" ]; 键，然后
+if [ "$remaining" -lt "5" ]; then
     # 使用curl命令获取GitHub API的重置时间，并将时间戳转换为格式化日期字符串
     reset_time=$(date -d @$(echo "$remaining_requests" |sed -n "/^x-ratelimit-reset:/p"|sed "s/.*: //") +"%Y-%m-%d %H:%M:%S") || network_error
     whiptail --title "错误" --msgbox "超出github的 API 速率限制,请等待到$reset_time" 12 60
@@ -132,7 +132,7 @@ function input_parameters() {
     # 调用detect_github_api_rate_limit函数以检查GitHub API速率限制
     detect_github_api_rate_limit
     exitstatus=$?
-    if [ $exitstatus = 6 ]; 键，然后
+    if [ $exitstatus = 6 ]; then
         return 6
     fi
     curl -s -L https://api.github.com/repos/openwrt/openwrt/tags|sed -n  '/^    "name": "/p'|sed -e 's/    "name": "//g' -e 's/",//g'> $TMPDIR/tagbranch.list || network_error
@@ -144,7 +144,7 @@ function input_parameters() {
     OPENWRT_TAG_BRANCH=$(whiptail --title "输入 tag/branch" --inputbox "$inputbox" 10 60 $latest_tag 3>&1 1>&2 2>&3)
     exitstatus=$?
     # 如果用户选择退出，则输出提示信息并退出函数
-    if [ $exitstatus != 0 ]; 键，然后
+    if [ $exitstatus != 0 ]; then
         echo "你选择了退出"
         return 6
     fi
