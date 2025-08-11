@@ -210,6 +210,12 @@ class OpenWrt(OpenWrtBase):
             content =  f.read().replace(r'	b43-fwsquash.py', r'	$(TOPDIR)/tools/b43-tools/files/b43-fwsquash.py')
         with open(os.path.join(self.path, 'package', "kernel", "mac80211", "broadcom.mk"), 'w', encoding='utf-8') as f:
             f.write(content)
+        # 设置llvm.download-ci-llvm为false
+        logger.info("设置llvm.download-ci-llvm为false")
+        with open(os.path.join(self.path, "feeds", "packages", "lang", "rust", "Makefile"), encoding='utf-8') as f:
+            content =  f.read().replace(r'	--set=llvm.download-ci-llvm=true ', r'	--set=llvm.download-ci-llvm=false ')
+        with open(os.path.join(self.path, "feeds", "packages", "lang", "rust", "Makefile"), 'w', encoding='utf-8') as f:
+            f.write(content)
 
         if self.tag_branch == "v23.05.2":
             logger.info("修复iperf3冲突")
