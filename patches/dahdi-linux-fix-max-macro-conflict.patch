@@ -1,0 +1,20 @@
+--- a/drivers/dahdi/wctdm24xxp/base.c
++++ b/drivers/dahdi/wctdm24xxp/base.c
+@@ -1516,7 +1516,7 @@ static inline void wait_access(struct t
+ 	int count = 0;
+ 
+ #define DAHDI_MAX_WAIT_ATTEMPTS 10
+-	#define MAX 10 /* attempts */
++	#define DAHDI_MAX 10 /* attempts */
+ 	unsigned long mask;
+ 	unsigned long flags;
+ 	unsigned long jiffies_limit;
+@@ -1526,7 +1526,7 @@ static inline void wait_access(struct t
+ 	/* wait for indirect read */
+ 	mask = TORMASK;
+ 	count = 0;
+-	while (count < MAX) {
++	while (count < DAHDI_MAX) {
+ 		if (!(vpmadt032_spi_getreg_indirect(wc, CS_LINE, &data)))
+ 			return;
+ 		count++;
