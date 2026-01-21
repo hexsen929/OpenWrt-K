@@ -214,6 +214,15 @@ def build_image_builder(cfg: dict) -> None:
     logger.info("下载编译所需源码...")
     openwrt.download_source()
 
+    logger.info("应用dahdi-linux MAX宏冲突修复补丁...")
+    dahdi_patch_path = os.path.join(paths.openwrt_k, "patches", "dahdi-linux-fix-max-macro-conflict.patch")
+    if os.path.exists(dahdi_patch_path):
+        from .utils.utils import apply_patch
+        with open(dahdi_patch_path, encoding='utf-8') as f:
+            patch_content = f.read()
+        if not apply_patch(patch_content, openwrt.path):
+            logger.warning("应用dahdi-linux补丁失败,如果未安装dahdi-linux则可忽略此警告")
+
     logger.info("开始编译软件包...")
     openwrt.make("package/compile")
 
