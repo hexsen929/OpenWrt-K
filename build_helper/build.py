@@ -129,6 +129,9 @@ def base_builds(cfg: dict) -> None:
 
     logger.info("修改配置(设置编译所有kmod)...")
     openwrt.enable_kmods(cfg["compile"]["kmod_compile_exclude_list"])
+    if not openwrt.check_package_dependencies():
+        msg = f"{cfg['name']} 启用 kmod 后检测到软件包依赖错误"
+        raise RuntimeError(msg)
 
     if os.getenv("CACHE_HIT", "").lower().strip() != "true":
         logger.info("下载编译工具链所需源码...")
@@ -210,6 +213,9 @@ def build_image_builder(cfg: dict) -> None:
         f.write("CONFIG_IB_STANDALONE=y\n")
         # f.write("CONFIG_SDK=y\n")
     openwrt.make_defconfig()
+    if not openwrt.check_package_dependencies():
+        msg = f"{cfg['name']} Image Builder 配置存在软件包依赖错误"
+        raise RuntimeError(msg)
 
     logger.info("下载编译所需源码...")
     openwrt.download_source()

@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import tarfile
 from datetime import datetime, timedelta, timezone
 from multiprocessing.pool import Pool
@@ -20,7 +21,20 @@ from .utils.openwrt import OpenWrt
 from .utils.paths import paths
 from .utils.repo import compiler, get_release_suffix, user_repo
 from .utils.upload import uploader
-from .utils.utils import parse_config
+from .utils.utils import parse_config, parse_optional_config
+
+
+SOURCE_PIN_KEYS = (
+    "immortalwrt_packages_commit",
+    "turboacc_package_commit",
+    "openwrt_smartdns_commit",
+    "luci_app_smartdns_commit",
+    "packages_lang_golang_commit",
+)
+
+
+def get_repo_key(repo: str, branch: str | None = None, commit: str | None = None) -> tuple[str, str, str | None]:
+    return repo, branch or "", commit
 
 
 def parse_configs() -> dict[str, dict[str, Any]]:
@@ -41,13 +55,14 @@ def parse_configs() -> dict[str, dict[str, Any]]:
             configs[name]["compile"]["kmod_compile_exclude_list"] = [configs[name]["compile"]["kmod_compile_exclude_list"]]
 
         configs[name]["openwrtext"] = parse_config(os.path.join(k_config_path, "openwrtext.config"), ("ipaddr", "timezone", "zonename", "golang_version"))
+        configs[name]["source_pins"] = parse_optional_config(os.path.join(k_config_path, "source_pins.config"), SOURCE_PIN_KEYS)
         extpackages_config = os.path.join(k_config_path, "extpackages.config")
         configs[name]["extpackages"] = {}
         if os.path.isfile(extpackages_config):
             extpackages = {}
             with open(extpackages_config, encoding="utf-8") as f:
                 for line in f:
-                    matched = re.match(r"^EXT_PACKAGES_(?P<key>NAME|PATH|REPOSITORIE|BRANCH)\[(?P<id>\d+)\]=\"(?P<value>.*?)\"$", line.strip())
+                    matched = re.match(r"^EXT_PACKAGES_(?P<key>NAME|PATH|REPOSITORIE|BRANCH|COMMIT)\[(?P<id>\d+)\]=\"(?P<value>.*?)\"$", line.strip())
                     if matched:
                         if matched.group("id") not in extpackages:
                             extpackages[matched.group("id")] = {}
@@ -60,8 +75,13 @@ def parse_configs() -> dict[str, dict[str, Any]]:
                         msg = f"配置{name}的extpackages{i}缺少{key}"
                         raise ConfigParseError(msg)
                 pkg_name = pkg["NAME"]
-                if name not in configs[name]["extpackages"]:
-                    configs[name]["extpackages"][pkg["NAME"]] = {k:v for k, v in pkg.items() if k != "NAME"}
+                if pkg_name not in configs[name]["extpackages"]:
+                    configs[name]["extpackages"][pkg_name] = {
+                        "PATH": pkg["PATH"],
+                        "REPOSITORIE": pkg["REPOSITORIE"],
+                        "BRANCH": pkg["BRANCH"],
+                        "COMMIT": pkg.get("COMMIT") or None,
+                    }
                 else:
                     msg = f"配置{name}的extpackages中存在重复的包名: {pkg_name}"
                     raise ConfigParseError(msg)
@@ -84,34 +104,60 @@ def get_matrix(configs: dict[str, dict]) -> str:
         matrix["include"].append({"name": name, "config": gzip.compress(json.dumps(config, separators=(',', ':')).encode("utf-8")).hex().upper()})
     return json.dumps(matrix)
 
-def clone(repo: str, path: str, branch: str | None) -> tuple[str, str | None, str]:
-    logger.info("开始克隆仓库 %s", repo if not branch else f"{repo} (分支: {branch})")
-    pygit2.clone_repository(repo, path, checkout_branch=branch if branch else None, depth=1)
-    logger.info("仓库 %s 克隆完成", repo if not branch else f"{repo} (分支: {branch})")
-    return repo, branch, path
+def clone(repo: str, path: str, branch: str | None, commit: str | None) -> tuple[str, str, str | None, str]:
+    desc = repo if not branch else f"{repo} (分支: {branch})"
+    if commit:
+        desc += f" @ {commit[:12]}"
+    logger.info("开始克隆仓库 %s", desc)
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    shutil.rmtree(path, ignore_errors=True)
+    args = ["git", "clone"]
+    if branch:
+        args.extend(["--branch", branch])
+    if not commit:
+        args.extend(["--depth", "1"])
+    args.extend([repo, path])
+    result = subprocess.run(args, capture_output=True, text=True)
+    if result.returncode != 0:
+        msg = f"克隆仓库失败: {desc}\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        raise RuntimeError(msg)
+    if commit:
+        checkout = subprocess.run(["git", "-C", path, "checkout", "--detach", commit], capture_output=True, text=True)
+        if checkout.returncode != 0:
+            msg = f"切换仓库提交失败: {desc}\nstdout: {checkout.stdout}\nstderr: {checkout.stderr}"
+            raise RuntimeError(msg)
+
+    logger.info("仓库 %s 克隆完成", desc)
+    return repo, branch or "", commit, path
 
 def prepare(configs: dict[str, dict[str, Any]]) -> None:
     # clone拓展软件源码
     logger.info("开始克隆拓展软件源码...")
-    to_clone: set[tuple[str, str]] = {("https://github.com/immortalwrt/packages", ""),
-                                       ("https://github.com/chenmozhijin/turboacc", "package"),
-                                       ("https://github.com/pymumu/openwrt-smartdns", "master"),
-                                       ("https://github.com/pymumu/luci-app-smartdns", "master"),
-                                       *[(pkg["REPOSITORIE"], pkg["BRANCH"]) for config in configs.values() for pkg in config["extpackages"].values()],
-                                       *[("https://github.com/sbwml/packages_lang_golang",
-                                          config["openwrtext"]["golang_version"]) for config in configs.values()]}
-    cloned_repos: dict[tuple[str, str | None], str] = {}
+    to_clone: set[tuple[str, str, str | None]] = {
+        *[get_repo_key("https://github.com/immortalwrt/packages", "", config["source_pins"].get("immortalwrt_packages_commit")) for config in configs.values()],
+        *[get_repo_key("https://github.com/chenmozhijin/turboacc", "package", config["source_pins"].get("turboacc_package_commit")) for config in configs.values()],
+        *[get_repo_key("https://github.com/pymumu/openwrt-smartdns", "master", config["source_pins"].get("openwrt_smartdns_commit")) for config in configs.values()],
+        *[get_repo_key("https://github.com/pymumu/luci-app-smartdns", "master", config["source_pins"].get("luci_app_smartdns_commit")) for config in configs.values()],
+        *[get_repo_key(pkg["REPOSITORIE"], pkg["BRANCH"], pkg.get("COMMIT")) for config in configs.values() for pkg in config["extpackages"].values()],
+        *[get_repo_key("https://github.com/sbwml/packages_lang_golang",
+                       config["openwrtext"]["golang_version"],
+                       config["source_pins"].get("packages_lang_golang_commit")) for config in configs.values()],
+    }
+    cloned_repos: dict[tuple[str, str, str | None], str] = {}
     with Pool(8) as p:
-        for repo, branch, path in p.starmap(clone,[
-                                             (repo,
-                                              os.path.join(paths.workdir, "repos", repo.split("/")[-2], repo.split("/")[-1],branch if branch else "@default@"),
-                                              branch)
-                                              for repo, branch in to_clone]):
-            cloned_repos[(repo, branch)] = path
+        for repo, branch, commit, path in p.starmap(clone, [
+            (repo,
+             os.path.join(paths.workdir, "repos", repo.split("/")[-2], repo.split("/")[-1], branch if branch else "@default@", commit if commit else "@head@"),
+             branch,
+             commit)
+            for repo, branch, commit in to_clone
+        ]):
+            cloned_repos[get_repo_key(repo, branch, commit)] = path
 
 
     logger.info("开始处理拓展软件源码...")
-    ext_pkg_paths = {os.path.join(cloned_repos[(pkg["REPOSITORIE"], pkg["BRANCH"])], pkg["PATH"])
+    ext_pkg_paths = {os.path.join(cloned_repos[get_repo_key(pkg["REPOSITORIE"], pkg["BRANCH"], pkg.get("COMMIT"))], pkg["PATH"])
                      for config in configs.values() for pkg in config["extpackages"].values()}
     for path in ext_pkg_paths:
         logger.debug("处理拓展包 %s", path)
@@ -155,8 +201,6 @@ def prepare(configs: dict[str, dict[str, Any]]) -> None:
     if len(cfg_names) > 1:
         for name in cfg_names[1:]:
             shutil.copytree(os.path.join(openwrt_paths, cfg_names[0]), os.path.join(openwrt_paths, name), symlinks=True)
-    openwrts = {name: OpenWrt(os.path.join(openwrt_paths, name), configs[name]["compile"]["openwrt_tag/branch"]) for name in cfg_names}
-
     # 下载AdGuardHome规则与配置
     logger.info("下载AdGuardHome规则与配置...")
     global_files_path = os.path.join(paths.workdir, "files")
@@ -195,9 +239,14 @@ def prepare(configs: dict[str, dict[str, Any]]) -> None:
     logger.info("编译者：%s", compiler)
 
     tasks = []
-    for cfg_name, openwrt in openwrts.items():
+    for cfg_name in cfg_names:
         config = configs[cfg_name]
-        tasks.append((config, cfg_name, openwrt, cloned_repos, global_files_path))
+        tasks.append((config,
+                      cfg_name,
+                      os.path.join(openwrt_paths, cfg_name),
+                      config["compile"]["openwrt_tag/branch"],
+                      cloned_repos,
+                      global_files_path))
     with Pool(len(cfg_names)) as p:
         for cfg_name, config, tar_path in p.starmap(prepare_cfg, tasks):
             configs[cfg_name] = config
@@ -207,9 +256,11 @@ def prepare(configs: dict[str, dict[str, Any]]) -> None:
 
 def prepare_cfg(config: dict[str, Any],
                 cfg_name: str,
-                openwrt: OpenWrt,
-                cloned_repos: dict[tuple[str, str], str],
+                openwrt_path: str,
+                tag_branch: str,
+                cloned_repos: dict[tuple[str, str, str | None], str],
                 global_files_path: str) -> tuple[str, dict[str, Any], str]:
+    openwrt = OpenWrt(openwrt_path, tag_branch)
 
     logger.info("%s开始更新feeds...", cfg_name)
     openwrt.feed_update()
@@ -217,42 +268,48 @@ def prepare_cfg(config: dict[str, Any],
     logger.info("%s开始更新netdata、smartdns...", cfg_name)
     # 更新netdata
     shutil.rmtree(os.path.join(openwrt.path, "feeds", "packages", "admin", "netdata"), ignore_errors=True)
-    shutil.copytree(os.path.join(cloned_repos[("https://github.com/immortalwrt/packages", "")], "admin", "netdata"),
+    shutil.copytree(os.path.join(cloned_repos[get_repo_key("https://github.com/immortalwrt/packages", "", config["source_pins"].get("immortalwrt_packages_commit"))], "admin", "netdata"),
                         os.path.join(openwrt.path, "feeds", "packages", "admin", "netdata"), symlinks=True)
     # 更新smartdns
     shutil.rmtree(os.path.join(openwrt.path, "feeds", "luci", "applications", "luci-app-smartdns"), ignore_errors=True)
     shutil.rmtree(os.path.join(openwrt.path, "feeds", "packages", "net", "smartdns"), ignore_errors=True)
-    shutil.copytree(cloned_repos[("https://github.com/pymumu/luci-app-smartdns", "master")],
+    shutil.copytree(cloned_repos[get_repo_key("https://github.com/pymumu/luci-app-smartdns", "master", config["source_pins"].get("luci_app_smartdns_commit"))],
                     os.path.join(openwrt.path, "feeds", "luci", "applications", "luci-app-smartdns"), symlinks=True)
-    shutil.copytree(cloned_repos[("https://github.com/pymumu/openwrt-smartdns", "master")],
+    shutil.copytree(cloned_repos[get_repo_key("https://github.com/pymumu/openwrt-smartdns", "master", config["source_pins"].get("openwrt_smartdns_commit"))],
                     os.path.join(openwrt.path, "feeds", "packages", "net", "smartdns"), symlinks=True)
 
     logger.info("%s处理软件包...", cfg_name)
     for pkg_name, pkg in config["extpackages"].items():
         path = os.path.join(openwrt.path, "package", "cmzj_packages", pkg_name)
-        pkg_path = os.path.join(cloned_repos[(pkg["REPOSITORIE"], pkg["BRANCH"])], pkg["PATH"])
+        repo_key = get_repo_key(pkg["REPOSITORIE"], pkg["BRANCH"], pkg.get("COMMIT"))
+        pkg_path = os.path.join(cloned_repos[repo_key], pkg["PATH"])
         if not os.path.exists(pkg_path):
-            msg = f"找不到{cfg_name}配置中的拓展软件包: {pkg_name} ,这可能是由于仓库 {pkg["REPOSITORIE"]} 目录结构变更导致的,请检查您的拓展软件包配置"
+            msg = f"找不到{cfg_name}配置中的拓展软件包: {pkg_name} ,这可能是由于仓库 {pkg['REPOSITORIE']} 目录结构变更导致的,请检查您的拓展软件包配置"
             raise FileNotFoundError(msg)
         logger.debug("复制拓展软件包 %s 到 %s", pkg_name, path)
-        shutil.copytree(os.path.join(cloned_repos[(pkg["REPOSITORIE"], pkg["BRANCH"])], pkg["PATH"]), path, symlinks=True)
+        shutil.copytree(pkg_path, path, symlinks=True)
         if os.path.isdir(os.path.join(path, ".git")):
             shutil.rmtree(os.path.join(path, ".git"))
 
     # 替换golang版本
     golang_path = os.path.join(openwrt.path, "feeds", "packages", "lang", "golang")
     shutil.rmtree(golang_path)
-    shutil.copytree(cloned_repos[("https://github.com/sbwml/packages_lang_golang", config["openwrtext"]["golang_version"])], golang_path)
+    shutil.copytree(cloned_repos[get_repo_key("https://github.com/sbwml/packages_lang_golang",
+                                              config["openwrtext"]["golang_version"],
+                                              config["source_pins"].get("packages_lang_golang_commit"))], golang_path)
     openwrt.feed_install()
     # 修复问题
     openwrt.fix_problems()
     # 应用配置
     openwrt.apply_config(config["openwrt"])
     openwrt.make_defconfig()
+    if not openwrt.check_package_dependencies():
+        msg = f"{cfg_name} 存在软件包依赖错误，请先修复依赖再继续编译"
+        raise RuntimeError(msg)
     config["openwrt"] = openwrt.get_diff_config()
 
     # 添加turboacc补丁
-    turboacc_dir = os.path.join(cloned_repos[("https://github.com/chenmozhijin/turboacc", "package")])
+    turboacc_dir = os.path.join(cloned_repos[get_repo_key("https://github.com/chenmozhijin/turboacc", "package", config["source_pins"].get("turboacc_package_commit"))])
     kernel_version = openwrt.get_kernel_version()
     enable_sfe = (openwrt.get_package_config("kmod-shortcut-fe") in ("y", "m") or
                openwrt.get_package_config("kmod-shortcut-fe-drv") in ("y", "m") or

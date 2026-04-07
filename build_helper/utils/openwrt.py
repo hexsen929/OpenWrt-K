@@ -182,9 +182,24 @@ class OpenWrt(OpenWrtBase):
         return package_config # type: ignore[]
 
     def check_package_dependencies(self) -> bool:
-        subprocess.run(['gmake', '-s', 'prepare-tmpinfo'], cwd=self.path)
-        if err := subprocess.run(['./scripts/package-metadata.pl', 'mk', 'tmp/.packageinfo'], cwd=self.path, capture_output=True, text=True).stderr:
-            core.error(f'检查到软件包依赖问题,这有可能会导致编译错误:\n{err}')
+        make_bin = shutil.which("gmake") or shutil.which("make")
+        if not make_bin:
+            msg = "未找到 make/gmake，无法执行软件包依赖检查"
+            raise FileNotFoundError(msg)
+
+        prepare = subprocess.run([make_bin, "-s", "prepare-tmpinfo"], cwd=self.path, capture_output=True, text=True)
+        if prepare.returncode != 0:
+            detail = prepare.stderr.strip() or prepare.stdout.strip()
+            core.error(f"生成 tmp/.packageinfo 失败, 这可能会导致后续编译错误:\n{detail}")
+            return False
+
+        metadata = subprocess.run(["./scripts/package-metadata.pl", "mk", "tmp/.packageinfo"],
+                                  cwd=self.path,
+                                  capture_output=True,
+                                  text=True)
+        if metadata.returncode != 0:
+            detail = metadata.stderr.strip() or metadata.stdout.strip()
+            core.error(f"检查到软件包依赖问题, 这有可能会导致编译错误:\n{detail}")
             return False
         return True
 

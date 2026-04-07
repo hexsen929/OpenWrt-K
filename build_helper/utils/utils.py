@@ -10,32 +10,51 @@ from .logger import logger
 from .paths import paths
 
 
-def parse_config(path: str, prefixs: tuple[str,...]|list[str]) -> dict[str, str | list[str] | bool]:
+def _parse_value(content: str) -> str | list[str] | bool:
+    match content.lower():
+        case "true":
+            return True
+        case "false":
+            return False
+        case _:
+            if "," in content:
+                return [v.strip() for v in content.split(",")]
+            return content
+
+
+def _parse_config_lines(path: str,
+                        prefixs: tuple[str, ...] | list[str],
+                        *,
+                        strict: bool) -> dict[str, str | list[str] | bool]:
     if not os.path.isfile(path):
         msg = f"配置文件 {path} 不存在"
         raise ConfigParseError(msg)
 
-    config = {}
     with open(path, encoding="utf-8") as f:
-        for prefix in prefixs:
-            for line in f:
-                if line.startswith(prefix+"="):
-                    content = line.split("=")[1].strip()
-                    match content.lower():
-                        case "true":
-                            config[prefix] = True
-                        case "false":
-                            config[prefix] = False
-                        case _:
-                            if "," in content:
-                                config[prefix] = [v.strip() for v in content.split(",")]
-                            else:
-                                config[prefix] = content
-                    break
-            else:
+        lines = [line.strip() for line in f]
+
+    config: dict[str, str | list[str] | bool] = {}
+    for prefix in prefixs:
+        key = prefix + "="
+        for line in lines:
+            if line.startswith(key):
+                config[prefix] = _parse_value(line[len(key):].strip())
+                break
+        else:
+            if strict:
                 msg = f"无法在配置文件 {path} 中找到配置项{prefix}"
                 raise ConfigParseError(msg)
     return config
+
+
+def parse_config(path: str, prefixs: tuple[str, ...] | list[str]) -> dict[str, str | list[str] | bool]:
+    return _parse_config_lines(path, prefixs, strict=True)
+
+
+def parse_optional_config(path: str, prefixs: tuple[str, ...] | list[str]) -> dict[str, str | list[str] | bool]:
+    if not os.path.isfile(path):
+        return {}
+    return _parse_config_lines(path, prefixs, strict=False)
 
 
 def setup_env(full: bool = False, clear: bool = False) -> None:
