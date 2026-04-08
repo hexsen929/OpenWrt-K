@@ -21,7 +21,7 @@ from .utils.openwrt import OpenWrt
 from .utils.paths import paths
 from .utils.repo import compiler, get_release_suffix, user_repo
 from .utils.upload import uploader
-from .utils.utils import parse_config, parse_optional_config
+from .utils.utils import apply_patch, parse_config, parse_optional_config
 
 
 SOURCE_PIN_KEYS = (
@@ -290,6 +290,13 @@ def prepare_cfg(config: dict[str, Any],
         shutil.copytree(pkg_path, path, symlinks=True)
         if os.path.isdir(os.path.join(path, ".git")):
             shutil.rmtree(os.path.join(path, ".git"))
+        if pkg_name == "nft-fullcone":
+            logger.info("%s为nft-fullcone应用Linux 6.12兼容补丁", cfg_name)
+            nft_patch_path = os.path.join(paths.openwrt_k, "patches", "nft-fullcone-fix-linux-6.12-validate-signature.patch")
+            with open(nft_patch_path, encoding="utf-8") as f:
+                if not apply_patch(f.read(), path):
+                    msg = f"{cfg_name} 应用nft-fullcone Linux 6.12兼容补丁失败"
+                    raise RuntimeError(msg)
 
     # 替换golang版本
     golang_path = os.path.join(openwrt.path, "feeds", "packages", "lang", "golang")
