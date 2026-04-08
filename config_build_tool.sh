@@ -265,7 +265,7 @@ function input_parameters() {
     if [ "$(grep -c "^golang_version=" $TMPDIR/openwrtext.config)" -eq '1' ];then
         golang_version=$(grep "^golang_version=" $TMPDIR/openwrtext.config|sed -e "s/golang_version=//")
     else
-        golang_version="25.x"
+        golang_version="26.x"
     fi
     DOWNLOAD_URL=https://raw.githubusercontent.com/$OpenWrt_K_repo/$OpenWrt_K_branch/config/$OpenWrt_K_config/OpenWrt-K/compile.config
     curl -o $TMPDIR/compile.config -s -L --retry 3 --connect-timeout 20  $DOWNLOAD_URL
@@ -1242,7 +1242,7 @@ openwrt_extension_config() {
             sed -i "/^zonename=/s#=.*#=Asia/Shanghai#g" buildconfig.config
             sed -i  "/^kmod_compile_exclude_list=/s/=.*/=kmod-shortcut-fe-cm,kmod-shortcut-fe,kmod-fast-classifier,kmod-shortcut-fe-drv,dahdi-linux/g" buildconfig.config
             sed -i "/^use_cache=/s/=.*/=true/g" buildconfig.config
-            sed -i "/^golang_version=/s/=.*/=25.x/g" buildconfig.config
+            sed -i "/^golang_version=/s/=.*/=26.x/g" buildconfig.config
             return 6
             ;;
         *)
