@@ -265,7 +265,7 @@ function input_parameters() {
     if [ "$(grep -c "^golang_version=" $TMPDIR/openwrtext.config)" -eq '1' ];then
         golang_version=$(grep "^golang_version=" $TMPDIR/openwrtext.config|sed -e "s/golang_version=//")
     else
-        golang_version="22.x"
+        golang_version="25.x"
     fi
     DOWNLOAD_URL=https://raw.githubusercontent.com/$OpenWrt_K_repo/$OpenWrt_K_branch/config/$OpenWrt_K_config/OpenWrt-K/compile.config
     curl -o $TMPDIR/compile.config -s -L --retry 3 --connect-timeout 20  $DOWNLOAD_URL
@@ -280,7 +280,7 @@ function input_parameters() {
     if [ "$(grep -c "^kmod_compile_exclude_list=" $TMPDIR/compile.config)" -eq '1' ];then
         kmod_compile_exclude_list=$(grep "^kmod_compile_exclude_list=" $TMPDIR/compile.config|sed -e "s/kmod_compile_exclude_list=//")
     else
-        kmod_compile_exclude_list="kmod-shortcut-fe-cm,kmod-shortcut-fe,kmod-fast-classifier,kmod-shortcut-fe-drv"
+        kmod_compile_exclude_list="kmod-shortcut-fe-cm,kmod-shortcut-fe,kmod-fast-classifier,kmod-shortcut-fe-drv,dahdi-linux"
     fi
     if [ "$(grep -c "^use_cache=" $TMPDIR/compile.config)" -eq '1' ];then
         use_cache=$(grep "^use_cache=" $TMPDIR/compile.config|sed -e "s/use_cache=//")
@@ -1240,9 +1240,9 @@ openwrt_extension_config() {
             sed -i "/^ipaddr/s/=.*/=192.168.1.1/g" buildconfig.config
             sed -i "/^timezone=/s/=.*/=CST-8/g" buildconfig.config
             sed -i "/^zonename=/s#=.*#=Asia/Shanghai#g" buildconfig.config
-            sed -i  "/^kmod_compile_exclude_list=/s/=.*/=kmod-shortcut-fe-cm,kmod-shortcut-fe,kmod-fast-classifier/g" buildconfig.config
+            sed -i  "/^kmod_compile_exclude_list=/s/=.*/=kmod-shortcut-fe-cm,kmod-shortcut-fe,kmod-fast-classifier,kmod-shortcut-fe-drv,dahdi-linux/g" buildconfig.config
             sed -i "/^use_cache=/s/=.*/=true/g" buildconfig.config
-            sed -i "/^golang_version=/s/=.*/=22.x/g" buildconfig.config
+            sed -i "/^golang_version=/s/=.*/=25.x/g" buildconfig.config
             return 6
             ;;
         *)

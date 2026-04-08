@@ -41,13 +41,19 @@ class OpenWrtBase:
 
     @staticmethod
     def _guess_failure_target(lines: list[str]) -> str | None:
-        patterns = (
-            r"ERROR: (?P<target>[^ ]+) failed to build\.",
+        explicit_patterns = (
+            r"ERROR:\s+(?P<target>\S+) failed to build\.",
+        )
+        fallback_patterns = (
             r"make\[\d+\]: \*\*\* \[[^\]]*?(?P<target>(?:package|toolchain|tools|target)/[^\] :]+)[^\]]*\] Error",
             r"Entering directory '.*/(?P<target>(?:package|toolchain|tools|target)/[^']+)'",
         )
         for line in reversed(lines):
-            for pattern in patterns:
+            for pattern in explicit_patterns:
+                if match := re.search(pattern, line):
+                    return match.group("target")
+        for line in reversed(lines):
+            for pattern in fallback_patterns:
                 if match := re.search(pattern, line):
                     return match.group("target")
         return None
