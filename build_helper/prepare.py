@@ -297,13 +297,15 @@ def prepare_cfg(config: dict[str, Any],
                 if not apply_patch(f.read(), path):
                     msg = f"{cfg_name} 应用nft-fullcone Linux 6.12兼容补丁失败"
                     raise RuntimeError(msg)
-        if pkg_name == "luci-app-fileassistant":
-            logger.info("%s为luci-app-fileassistant应用APK版本号修复补丁", cfg_name)
-            fileassistant_patch_path = os.path.join(paths.openwrt_k, "patches", "luci-app-fileassistant-fix-apk-version.patch")
-            with open(fileassistant_patch_path, encoding="utf-8") as f:
-                if not apply_patch(f.read(), path):
-                    msg = f"{cfg_name} 应用luci-app-fileassistant APK版本号修复补丁失败"
-                    raise RuntimeError(msg)
+        if pkg_name == "hexsen929":
+            fileassistant_path = os.path.join(path, "luci-app-fileassistant")
+            if os.path.isdir(fileassistant_path):
+                logger.info("%s为luci-app-fileassistant应用APK版本号修复补丁", cfg_name)
+                fileassistant_patch_path = os.path.join(paths.openwrt_k, "patches", "luci-app-fileassistant-fix-apk-version.patch")
+                with open(fileassistant_patch_path, encoding="utf-8") as f:
+                    if not apply_patch(f.read(), fileassistant_path):
+                        msg = f"{cfg_name} 应用luci-app-fileassistant APK版本号修复补丁失败"
+                        raise RuntimeError(msg)
 
     # 替换golang版本
     golang_path = os.path.join(openwrt.path, "feeds", "packages", "lang", "golang")
