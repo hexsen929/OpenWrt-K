@@ -12,6 +12,7 @@ on:
       - 'files/**'
       - 'build_helper/**'
       - 'config/**'
+      - 'patches/**'
 
       - '!.gitignore'
       - '!LICENSE'
