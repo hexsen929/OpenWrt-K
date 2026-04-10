@@ -297,6 +297,13 @@ def prepare_cfg(config: dict[str, Any],
                 if not apply_patch(f.read(), path):
                     msg = f"{cfg_name} 应用nft-fullcone Linux 6.12兼容补丁失败"
                     raise RuntimeError(msg)
+        if pkg_name == "vlmcsd":
+            logger.info("%s为vlmcsd应用APK版本号修复补丁", cfg_name)
+            vlmcsd_patch_path = os.path.join(paths.openwrt_k, "patches", "vlmcsd-fix-apk-version.patch")
+            with open(vlmcsd_patch_path, encoding="utf-8") as f:
+                if not apply_patch(f.read(), path):
+                    msg = f"{cfg_name} 应用vlmcsd APK版本号修复补丁失败"
+                    raise RuntimeError(msg)
         if pkg_name == "hexsen929":
             fileassistant_path = os.path.join(path, "luci-app-fileassistant")
             if os.path.isdir(fileassistant_path):
