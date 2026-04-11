@@ -18,6 +18,21 @@ from .utils.upload import uploader
 from .utils.utils import hash_dirs, setup_env
 
 
+def collect_package_files(src_dir: str, dst_dir: str, *, prefix: str | None = None) -> int:
+    os.makedirs(dst_dir, exist_ok=True)
+    count = 0
+    for root, _dirs, files in os.walk(src_dir):
+        for file in files:
+            if not file.endswith((".ipk", ".apk")):
+                continue
+            if prefix and not file.startswith(prefix):
+                continue
+            shutil.copy2(os.path.join(root, file), dst_dir)
+            logger.debug("复制 %s 到 %s", file, dst_dir)
+            count += 1
+    return count
+
+
 def get_cache_restore_key(openwrt: OpenWrt, cfg: dict) -> str:
     context = Context()
     if context.job.startswith("base-builds"):
@@ -180,12 +195,10 @@ def build_packages(cfg: dict) -> None:
 
     logger.info("整理软件包...")
     packages_path = os.path.join(paths.uploads, "packages")
-    os.makedirs(packages_path, exist_ok=True)
-    for root, _dirs, files in os.walk(os.path.join(openwrt.path, "bin")):
-        for file in files:
-            if file.endswith(".ipk"):
-                shutil.copy2(os.path.join(root, file), packages_path)
-                logger.debug(f"复制 {file} 到 {packages_path}")
+    package_count = collect_package_files(os.path.join(openwrt.path, "bin"), packages_path)
+    if package_count == 0:
+        msg = f"{cfg['name']} 未找到任何可上传的软件包产物(.apk/.ipk)"
+        raise RuntimeError(msg)
     uploader.add(f"packages-{cfg['name']}", packages_path, retention_days=1)
 
     logger.info("删除旧缓存...")
@@ -246,12 +259,10 @@ def build_image_builder(cfg: dict) -> None:
     logger.info("整理kmods...")
 
     kmods_path = os.path.join(paths.uploads, "kmods")
-    os.makedirs(kmods_path, exist_ok=True)
-    for root, _dirs, files in os.walk(os.path.join(openwrt.path, "bin")):
-        for file in files:
-            if file.startswith("kmod-") and file.endswith(".ipk"):
-                shutil.copy2(os.path.join(root, file), kmods_path)
-                logger.debug(f"复制 {file} 到 {kmods_path}")
+    kmod_count = collect_package_files(os.path.join(openwrt.path, "bin"), kmods_path, prefix="kmod-")
+    if kmod_count == 0:
+        msg = f"{cfg['name']} 未找到任何可上传的内核模块产物(kmod-*.apk/.ipk)"
+        raise RuntimeError(msg)
     uploader.add(f"kmods-{cfg['name']}", kmods_path, retention_days=1)
 
     target, subtarget = openwrt.get_target()
