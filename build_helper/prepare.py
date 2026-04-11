@@ -383,6 +383,15 @@ def prepare_cfg(config: dict[str, Any],
                     if not apply_patch(f.read(), fileassistant_path):
                         msg = f"{cfg_name} 应用luci-app-fileassistant APK版本号修复补丁失败"
                         raise RuntimeError(msg)
+            tailscale_path = os.path.join(path, "luci-app-tailscale")
+            if os.path.isdir(tailscale_path):
+                logger.info("%s为luci-app-tailscale应用Tailscale文件冲突修复补丁", cfg_name)
+                tailscale_feed_path = os.path.join(openwrt.path, "feeds", "packages", "net", "tailscale")
+                tailscale_patch_path = os.path.join(paths.openwrt_k, "patches", "tailscale-remove-default-files.patch")
+                with open(tailscale_patch_path, encoding="utf-8") as f:
+                    if not apply_patch(f.read(), tailscale_feed_path):
+                        msg = f"{cfg_name} 应用luci-app-tailscale Tailscale文件冲突修复补丁失败"
+                        raise RuntimeError(msg)
 
     # 替换golang版本
     golang_path = os.path.join(openwrt.path, "feeds", "packages", "lang", "golang")
