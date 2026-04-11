@@ -26,6 +26,7 @@ permissions:
 env:
   GITHUB_TOKEN: ${{ github.token }}
   BUILD_HELPER_DEBUG: true
+  BUILD_HELPER_DIST_UPGRADE: false
 jobs:
 
   prepare:

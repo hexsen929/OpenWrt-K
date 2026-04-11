@@ -41,7 +41,7 @@ def get_cache_restore_key(openwrt: OpenWrt, cfg: dict) -> str:
 def prepare(cfg: dict) -> None:
     context = Context()
     logger.debug("job: %s", context.job)
-    setup_env(context.job in ("build-packages", "build-ImageBuilder", "build-images-releases"),
+    setup_env(context.job in ("build-packages", "build-ImageBuilder"),
               context.job in ("build-packages", "build-ImageBuilder", "build-images-releases"))
 
     tmpdir = paths.get_tmpdir()

@@ -62,6 +62,7 @@ def setup_env(full: bool = False, clear: bool = False) -> None:
         subprocess.run(["sudo", "-E", *list(args)], stdout=subprocess.PIPE)
     def apt(*args: str) -> None:
         subprocess.run(["sudo", "-E", "apt-get", "-y", *list(args)], stdout=subprocess.PIPE)
+    dist_upgrade = os.getenv("BUILD_HELPER_DIST_UPGRADE", "").strip().lower() in {"1", "true", "yes", "on"}
     logger.info("开始准备编译环境%s...", f"(full={full}, clear={clear})")
     # https://github.com/community/community/discussions/47863
     sudo("apt-mark", "hold", "grub-efi-amd64-signed")
@@ -78,9 +79,13 @@ def setup_env(full: bool = False, clear: bool = False) -> None:
             logger.exception("删除不需要的包时发生错误")
 
     if full:
-        # 3. 完整更新所有包
-        logger.info("完整更新所有包")
-        apt("dist-upgrade")
+        # 3. GitHub Actions runner 已预装大部分系统包，默认跳过 dist-upgrade
+        # 以避免镜像仓库波动把构建时间拖到数小时。
+        if dist_upgrade:
+            logger.info("完整更新所有包")
+            apt("dist-upgrade")
+        else:
+            logger.info("跳过完整系统升级，直接安装编译依赖")
         # 4.安装编译环境
         apt("install", "ack", "antlr3", "aria2", "asciidoc", "autoconf", "automake", "autopoint", "b43-fwcutter", "binutils",
             "bison", "build-essential", "bzip2", "ccache", "cmake", "cpio", "curl", "device-tree-compiler", "fastjar",
