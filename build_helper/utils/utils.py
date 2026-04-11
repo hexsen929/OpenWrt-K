@@ -96,7 +96,7 @@ def setup_env(full: bool = False, clear: bool = False) -> None:
             "qemu-utils", "clang", "g++", "rsync", "unzip", "zlib1g-dev", "wget", "libfuse-dev")
     else:
         apt("install", "build-essential", "clang", "flex", "bison", "g++", "gawk", "gcc-multilib", "g++-multilib", "gettext",
-            "libncurses5-dev", "libssl-dev", "rsync", "swig", "unzip", "zlib1g-dev", "file", "wget")
+            "libncurses5-dev", "libssl-dev", "qemu-utils", "rsync", "swig", "unzip", "zlib1g-dev", "file", "wget")
     # 5.重载系统
     logger.info("重载系统")
     sudo("systemctl", "daemon-reload")

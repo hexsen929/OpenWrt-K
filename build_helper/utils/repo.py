@@ -33,14 +33,25 @@ def get_current_commit() -> str:
         head_commit = head_commit.raw.hex()
     return head_commit
 
+def get_artifact_run_id() -> int:
+    artifact_run_id = os.getenv("BUILD_HELPER_ARTIFACT_RUN_ID", "").strip()
+    if not artifact_run_id:
+        return context.run_id
+    try:
+        return int(artifact_run_id)
+    except ValueError as e:
+        msg = f"无效的artifact run id: {artifact_run_id}"
+        raise ValueError(msg) from e
+
 def dl_artifact(name: str, path: str) -> str:
+    artifact_run_id = get_artifact_run_id()
     for artifact in repo.get_artifacts():
-        if artifact.workflow_run.id == context.run_id and artifact.name == name:
+        if artifact.workflow_run.id == artifact_run_id and artifact.name == name:
             dl_url = artifact.archive_download_url
-            logger.debug(f'Downloading artifact {name} from {dl_url}')
+            logger.debug(f'Downloading artifact {name} from run {artifact_run_id}: {dl_url}')
             break
     else:
-        msg = f'Artifact {name} not found'
+        msg = f'Artifact {name} not found in run {artifact_run_id}'
         raise ValueError(msg)
     if not token:
         msg = "没有可用的token"

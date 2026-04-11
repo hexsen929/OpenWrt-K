@@ -11,7 +11,7 @@ from .utils.logger import logger
 from .utils.network import request_get
 from .utils.openwrt import ImageBuilder, OpenWrt
 from .utils.paths import paths
-from .utils.repo import dl_artifact, get_current_commit, match_releases, new_release, repo, user_repo
+from .utils.repo import dl_artifact, get_artifact_run_id, get_current_commit, match_releases, new_release, repo, user_repo
 
 
 def releases(cfg: dict) -> None:
@@ -63,6 +63,7 @@ def releases(cfg: dict) -> None:
     current_packages = {line.split(" - ")[0]: line.split(" - ")[1] for line in current_manifest.splitlines()} if current_manifest else None
 
     context = Context()
+    artifact_run_id = get_artifact_run_id()
 
     try:
         changelog = ""
@@ -92,8 +93,11 @@ def releases(cfg: dict) -> None:
 
         body = f"编译完成于: {datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S')}\n"
         body += f"使用的配置: [{cfg['name']}](https://github.com/{user_repo}/tree/{get_current_commit()}/config/{cfg['name']})\n"
-        workflow_run = repo.get_workflow_run(context.run_id)
+        workflow_run = repo.get_workflow_run(artifact_run_id)
         body += f"编译此固件的工作流运行: [{workflow_run.display_title}]({workflow_run.html_url}) ({workflow_run.event})\n"
+        if artifact_run_id != context.run_id:
+            release_run = repo.get_workflow_run(context.run_id)
+            body += f"发布此固件的工作流运行: [{release_run.display_title}]({release_run.html_url}) ({release_run.event})\n"
         if profiles:
             if (version_number := profiles.get("version_number")) and (version_code := profiles.get('version_code')):
                 body += f"OpenWrt版本: {version_number} {version_code}\n"

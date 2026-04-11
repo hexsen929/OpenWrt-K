@@ -4,6 +4,16 @@
 name: Build OpenWrt-K
 on:
   workflow_dispatch:
+    inputs:
+      release_only:
+        description: '只复用已有 artifacts 执行最后发布'
+        required: false
+        default: false
+        type: boolean
+      artifact_run_id:
+        description: '复用 artifacts 的工作流运行 ID，只跑最后发布时必填'
+        required: false
+        type: string
   schedule:
     - cron: '0 4 * * *'
   push:
@@ -49,6 +59,7 @@ jobs:
         uses: ./../../../../../opt/OpenWrt-K/.github/action/upload
 
   base-builds:
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.release_only != 'true' }}
     runs-on: ubuntu-22.04
     needs: prepare
     name: 构建工具链与内核(${{ matrix.name }})
@@ -96,6 +107,7 @@ jobs:
         uses: ./../../../../../opt/OpenWrt-K/.github/action/upload
 
   build-packages:
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.release_only != 'true' }}
     runs-on: ubuntu-22.04
     needs: [prepare,base-builds]
     name: 构建软件包(${{ matrix.name }})
@@ -131,6 +143,7 @@ jobs:
         uses: ./../../../../../opt/OpenWrt-K/.github/action/upload
 
   build-ImageBuilder:
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.release_only != 'true' }}
     runs-on: ubuntu-22.04
     needs: [prepare,base-builds]
     name: 构建Image Builder与内核模块(${{ matrix.name }})
@@ -166,16 +179,27 @@ jobs:
         uses: ./../../../../../opt/OpenWrt-K/.github/action/upload
 
   build-images-releases:
+    if: ${{ always() && needs.prepare.result == 'success' && ((github.event_name == 'workflow_dispatch' && github.event.inputs.release_only == 'true') || (needs.base-builds.result == 'success' && needs.build-ImageBuilder.result == 'success' && needs.build-packages.result == 'success')) }}
     runs-on: ubuntu-22.04
     needs: [prepare,base-builds,build-ImageBuilder,build-packages]
     name: 构建镜像并发布(${{ matrix.name }})
     strategy:
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    env:
+      BUILD_HELPER_ARTIFACT_RUN_ID: ${{ github.event.inputs.artifact_run_id }}
     steps:
 
       - uses: actions/checkout@v4
       - name: 建立环境
         uses: ./.github/action/prepare
+
+      - name: 校验复用构建参数
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_only == 'true' }}
+        run: |
+          test -n "${BUILD_HELPER_ARTIFACT_RUN_ID}" || {
+            echo "artifact_run_id 不能为空"
+            exit 1
+          }
 
       - name: 准备构建
         id: prepare
