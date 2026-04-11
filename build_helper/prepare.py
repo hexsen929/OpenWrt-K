@@ -37,6 +37,69 @@ def get_repo_key(repo: str, branch: str | None = None, commit: str | None = None
     return repo, branch or "", commit
 
 
+def get_defined_package_names(path: str) -> set[str]:
+    makefile_path = os.path.join(path, "Makefile")
+    if not os.path.isfile(makefile_path):
+        return set()
+
+    package_names: set[str] = set()
+    with open(makefile_path, encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            if not line.startswith("define Package/"):
+                continue
+            package_name = line.removeprefix("define Package/").strip()
+            if "/" in package_name or "$(" in package_name:
+                continue
+            package_names.add(package_name)
+    return package_names
+
+
+def get_selected_package_names(config_text: str) -> set[str]:
+    return {
+        line.removeprefix("CONFIG_PACKAGE_").removesuffix("=y")
+        for line in config_text.splitlines()
+        if line.startswith("CONFIG_PACKAGE_") and line.endswith("=y")
+    }
+
+
+def remove_duplicate_feed_packages(ext_path: str, openwrt_path: str, config_text: str) -> None:
+    selected_packages = get_selected_package_names(config_text)
+    if not selected_packages:
+        return
+
+    ext_packages: dict[str, str] = {}
+    for entry in os.scandir(ext_path):
+        if not entry.is_dir():
+            continue
+        for package_name in get_defined_package_names(entry.path):
+            if package_name in selected_packages:
+                ext_packages[package_name] = entry.path
+
+    if not ext_packages:
+        return
+
+    feed_root = os.path.join(openwrt_path, "feeds", "packages")
+    if not os.path.isdir(feed_root):
+        return
+
+    removed_dirs: set[str] = set()
+    for root, _dirs, files in os.walk(feed_root):
+        if "Makefile" not in files:
+            continue
+        if root in removed_dirs:
+            continue
+
+        overlap = ext_packages.keys() & get_defined_package_names(root)
+        if not overlap:
+            continue
+
+        logger.info("删除feeds/packages中与扩展仓库重复的软件包目录 %s，重复包: %s",
+                    root,
+                    ",".join(sorted(overlap)))
+        shutil.rmtree(root)
+        removed_dirs.add(root)
+
+
 def parse_configs() -> dict[str, dict[str, Any]]:
     """解析配置文件"""
     configs: dict[str, dict] = {}
@@ -311,6 +374,7 @@ def prepare_cfg(config: dict[str, Any],
                     msg = f"{cfg_name} 应用vlmcsd APK版本号修复补丁失败"
                     raise RuntimeError(msg)
         if pkg_name == "hexsen929":
+            remove_duplicate_feed_packages(path, openwrt.path, config["openwrt"])
             fileassistant_path = os.path.join(path, "luci-app-fileassistant")
             if os.path.isdir(fileassistant_path):
                 logger.info("%s为luci-app-fileassistant应用APK版本号修复补丁", cfg_name)
