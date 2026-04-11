@@ -53,7 +53,7 @@ jobs:
       - name: 准备
         id: run
         working-directory: /opt/OpenWrt-K
-        run: python3 -m build_helper --task prepare
+        run: python3 -m build_helper --task ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_only == 'true' && 'matrix' || 'prepare' }}
 
       - name: 上传
         uses: ./../../../../../opt/OpenWrt-K/.github/action/upload

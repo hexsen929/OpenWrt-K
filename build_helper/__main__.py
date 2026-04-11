@@ -24,6 +24,14 @@ else:
 
 def main() -> None:
     match args.task:
+        case "matrix":
+            from .prepare import get_matrix, parse_configs
+            try:
+                configs = parse_configs()
+                core.set_output("matrix", get_matrix(configs))
+            except Exception as e:
+                msg = f"生成矩阵时出错: {e.__class__.__name__}: {e!s}"
+                raise ConfigParseError(msg) from e
         case "prepare":
             from .prepare import get_matrix, parse_configs, prepare
             setup_env()
