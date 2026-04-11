@@ -277,6 +277,12 @@ def prepare_cfg(config: dict[str, Any],
                     os.path.join(openwrt.path, "feeds", "luci", "applications", "luci-app-smartdns"), symlinks=True)
     shutil.copytree(cloned_repos[get_repo_key("https://github.com/pymumu/openwrt-smartdns", "master", config["source_pins"].get("openwrt_smartdns_commit"))],
                     os.path.join(openwrt.path, "feeds", "packages", "net", "smartdns"), symlinks=True)
+    logger.info("%s为smartdns应用下载修复补丁", cfg_name)
+    smartdns_patch_path = os.path.join(paths.openwrt_k, "patches", "smartdns-fix-download.patch")
+    with open(smartdns_patch_path, encoding="utf-8") as f:
+        if not apply_patch(f.read(), os.path.join(openwrt.path, "feeds", "packages", "net", "smartdns")):
+            msg = f"{cfg_name} 应用smartdns下载修复补丁失败"
+            raise RuntimeError(msg)
 
     logger.info("%s处理软件包...", cfg_name)
     for pkg_name, pkg in config["extpackages"].items():
