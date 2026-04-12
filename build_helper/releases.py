@@ -35,6 +35,8 @@ def releases(cfg: dict) -> None:
     if target is None or subtarget is None:
         msg = "无法获取target信息"
         raise RuntimeError(msg)
+    cfg["target"] = target
+    cfg["subtarget"] = subtarget
     firmware_path = str(shutil.copytree(os.path.join(ib.path, "bin", "targets", target, subtarget), os.path.join(paths.uploads, "firmware")))
 
     current_manifest = None
@@ -65,8 +67,8 @@ def releases(cfg: dict) -> None:
     context = Context()
     artifact_run_id = get_artifact_run_id()
 
+    changelog = ""
     try:
-        changelog = ""
         if release := match_releases(cfg):
             packages = openwrt.get_packageinfos()
 
@@ -91,25 +93,25 @@ def releases(cfg: dict) -> None:
 
             changelog = "更新日志:\n" + changelog if changelog else "无任何软件包更新"
 
-        body = f"编译完成于: {datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S')}\n"
-        body += f"使用的配置: [{cfg['name']}](https://github.com/{user_repo}/tree/{get_current_commit()}/config/{cfg['name']})\n"
-        workflow_run = repo.get_workflow_run(artifact_run_id)
-        body += f"编译此固件的工作流运行: [{workflow_run.display_title}]({workflow_run.html_url}) ({workflow_run.event})\n"
-        if artifact_run_id != context.run_id:
-            release_run = repo.get_workflow_run(context.run_id)
-            body += f"发布此固件的工作流运行: [{release_run.display_title}]({release_run.html_url}) ({release_run.event})\n"
-        if profiles:
-            if (version_number := profiles.get("version_number")) and (version_code := profiles.get('version_code')):
-                body += f"OpenWrt版本: {version_number} {version_code}\n"
-            if target := profiles.get("target"):
-                body += f"目标平台: {target}\n"
-        if current_packages and (kernel_ver := current_packages.get("kernel")):
-            body += f"内核版本: {kernel_ver}\n"
-
-        if changelog:
-            body += f"\n\n{changelog}"
-
-        new_release(cfg, assets, body)
-
     except Exception:
         logger.exception("获取旧版本信息并对照失败")
+
+    body = f"编译完成于: {datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S')}\n"
+    body += f"使用的配置: [{cfg['name']}](https://github.com/{user_repo}/tree/{get_current_commit()}/config/{cfg['name']})\n"
+    workflow_run = repo.get_workflow_run(artifact_run_id)
+    body += f"编译此固件的工作流运行: [{workflow_run.display_title}]({workflow_run.html_url}) ({workflow_run.event})\n"
+    if artifact_run_id != context.run_id:
+        release_run = repo.get_workflow_run(context.run_id)
+        body += f"发布此固件的工作流运行: [{release_run.display_title}]({release_run.html_url}) ({release_run.event})\n"
+    if profiles:
+        if (version_number := profiles.get("version_number")) and (version_code := profiles.get('version_code')):
+            body += f"OpenWrt版本: {version_number} {version_code}\n"
+        if target_name := profiles.get("target"):
+            body += f"目标平台: {target_name}\n"
+    if current_packages and (kernel_ver := current_packages.get("kernel")):
+        body += f"内核版本: {kernel_ver}\n"
+
+    if changelog:
+        body += f"\n\n{changelog}"
+
+    new_release(cfg, assets, body)
