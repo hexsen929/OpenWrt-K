@@ -1,23 +1,47 @@
 #!/bin/sh
-uci set network.lan.ipaddr="192.168.100.1"
+pkg_installed() {
+  local pkg="$1"
+  if command -v apk >/dev/null 2>&1; then
+    apk info 2>/dev/null | grep -qx "$pkg"
+  else
+    opkg list-installed 2>/dev/null | grep -q "^$pkg "
+  fi
+}
+
+set_lan_ipaddr() {
+  local ipaddr="$1"
+  local prefix="${2:-24}"
+  if uci -q show network.lan | grep -qE "network\\.lan\\.ipaddr='[^']+/.+'"; then
+    uci -q delete network.lan.ipaddr
+    uci -q delete network.lan.netmask
+    uci add_list network.lan.ipaddr="${ipaddr}/${prefix}"
+  else
+    uci set network.lan.ipaddr="$ipaddr"
+    uci set network.lan.netmask='255.255.255.0'
+  fi
+}
+
+set_lan_ipaddr "192.168.100.1"
 uci commit network
 /etc/init.d/network restart
 sed -i "/^DISTRIB_DESCRIPTION='/s/'$/ Compiled by 沉默の金'/" /etc/openwrt_release
 [ -d "/etc/init.d" ] && chmod +x /etc/init.d/*
 [ -e "/usr/bin/AdGuardHome/AdGuardHome" ] && chmod 755 /usr/bin/AdGuardHome/AdGuardHome
-until [ "$( opkg list-installed 2>/dev/null| grep -c "^kernel")" -ne '0' ]; do
-  sleep 1
-done
+if ! command -v apk >/dev/null 2>&1; then
+  until [ "$( opkg list-installed 2>/dev/null | grep -c "^kernel")" -ne '0' ]; do
+    sleep 1
+  done
+fi
 
 # 检查是否安装了 MosDNS
-if [ "$( opkg list-installed 2>/dev/null| grep -c "^mosdns")" -ne '0' ]; then
+if pkg_installed mosdns; then
   # 配置 MosDNS
   uci set mosdns.config=mosdns
   uci set mosdns.config.enabled='1'
   uci set mosdns.config.listen_port='5335'
   
   # 如果没有安装 AdGuardHome，则设置 redirect 为 1
-  if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-adguardhome")" -eq '0' ]; then
+  if ! pkg_installed luci-app-adguardhome; then
     uci set mosdns.config.redirect='1'
   fi
   
@@ -73,7 +97,7 @@ if [ "$( opkg list-installed 2>/dev/null| grep -c "^mosdns")" -ne '0' ]; then
 fi
 
 # 检查是否安装了 SmartDNS，并且只在没有 MosDNS 时配置
-if [ "$( opkg list-installed 2>/dev/null| grep -c "^mosdns")" -eq '0' ] && [ "$( opkg list-installed 2>/dev/null| grep -c "^smartdns")" -ne '0' ] && [ ! "$(uci -q get smartdns.@server[0].name)" = "清华大学TUNA协会" ];then
+if ! pkg_installed mosdns && pkg_installed smartdns && [ ! "$(uci -q get smartdns.@server[0].name)" = "清华大学TUNA协会" ];then
   uci set smartdns.@smartdns[0].prefetch_domain='1'
   uci set smartdns.@smartdns[0].port='6053'
   uci set smartdns.@smartdns[0].seconddns_port='5335'
@@ -280,7 +304,7 @@ if [ "$( opkg list-installed 2>/dev/null| grep -c "^mosdns")" -eq '0' ] && [ "$(
 fi
 
 # 检查是否安装了 AdGuardHome
-if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-adguardhome")" -ne '0' ];then
+if pkg_installed luci-app-adguardhome; then
   # 禁用 dnsmasq 的 DNS 功能，保留 DHCP
   uci set dhcp.@dnsmasq[0].port='5353'
   uci set dhcp.@dnsmasq[0].cachesize='0'
@@ -302,7 +326,7 @@ EOI
   uci commit AdGuardHome
 
   # 根据是否安装 mosdns 来设置上游 DNS
-  if [ "$( opkg list-installed 2>/dev/null| grep -c "^mosdns")" -ne '0' ]; then
+  if pkg_installed mosdns; then
     # 先清空 upstream_dns 部分
     sed -i '/upstream_dns:/,/^[a-z]/ {/upstream_dns:/!{/^[a-z]/!d}}' /etc/AdGuardHome.yaml
     # 设置新的 upstream_dns
@@ -319,7 +343,7 @@ EOI
   /etc/init.d/AdGuardHome restart
 fi
 
-if [ "$( opkg list-installed 2>/dev/null| grep -c "^aria2")" -ne '0' ];then
+if pkg_installed aria2; then
   uci set aria2.main.user='root'
   uci set aria2.main.config_dir='/etc/aria2'
   uci set aria2.main.log='/etc/aria2/log'
@@ -330,7 +354,7 @@ if [ "$( opkg list-installed 2>/dev/null| grep -c "^aria2")" -ne '0' ];then
   /etc/init.d/aria2 restart
 fi
 
-if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-openclash")" -ne '0' ] && [ "$(uci show openclash|grep -c ".port='1745'")" -ne '2' ] && [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-passwall")" -eq '0' ];then
+if pkg_installed luci-app-openclash && [ "$(uci show openclash|grep -c ".port='1745'")" -ne '2' ] && ! pkg_installed luci-app-passwall; then
   if [ "$(grep -c "^代理规则(by 沉默の金)" /usr/share/openclash/res/rule_providers.list)" -eq '0' ];then
       sed -i '1i 代理规则(by 沉默の金),沉默の金,classical,chenmozhijin/OpenWrt-K/main/files/etc/openclash/rule_provider/,ProxyRule-chenmozhijin.yaml' "/usr/share/openclash/res/rule_providers.list"
   fi
@@ -340,7 +364,7 @@ if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-openclash")" -ne '0
   if [ "$(grep -c "^港澳台规则(by 沉默の金)" /usr/share/openclash/res/rule_providers.list)" -eq '0' ];then
       sed -i '1i 港澳台规则(by 沉默の金),沉默の金,classical,chenmozhijin/OpenWrt-K/main/files/etc/openclash/rule_provider/,HKMOTWRule-chenmozhijin.yaml' "/usr/share/openclash/res/rule_providers.list"
   fi
-  if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-adguardhome")" -ne '0' ];then
+  if pkg_installed luci-app-adguardhome; then
     n=0
     while [ "$n" -lt $(uci show openclash|grep -c "^openclash.@dns_servers\[[0-9]\{1,10\}\]=dns_servers") ]; do
       uci set openclash.@dns_servers[$n].enabled='0'
@@ -405,7 +429,7 @@ if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-openclash")" -ne '0
   uci add_list openclash.@rule_provider_config[-1].rule_name='代理规则(by 沉默の金)'
   uci commit openclash
   # 如果安装了 PassWall，停止并禁用 OpenClash
-  if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-passwall")" -ne '0' ]; then
+  if pkg_installed luci-app-passwall; then
     /etc/init.d/openclash stop
     /etc/init.d/openclash disable
   fi
@@ -421,4 +445,3 @@ uci commit
 /etc/init.d/sing-box stop
 /etc/init.d/sing-box disable
 exit 0
-

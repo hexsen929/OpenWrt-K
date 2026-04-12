@@ -1,4 +1,13 @@
 #!/bin/sh
+pkg_installed() {
+  local pkg="$1"
+  if command -v apk >/dev/null 2>&1; then
+    apk info 2>/dev/null | grep -qx "$pkg"
+  else
+    opkg list-installed 2>/dev/null | grep -q "^$pkg "
+  fi
+}
+
 sleep 5
 [ ! -s "/etc/config/passwall" ] && sleep 5
 [ ! -s "/etc/config/passwall" ] && sleep 5
@@ -8,8 +17,8 @@ sleep 5
 [ ! -s "/etc/config/passwall" ] && cp -f /usr/share/passwall/0_default_config /etc/config/passwall
 
 # 检查是否安装了 PassWall，如果安装了则禁用 OpenClash
-if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-passwall")" -ne '0' ]; then
-  if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-openclash")" -ne '0' ]; then
+if pkg_installed luci-app-passwall; then
+  if pkg_installed luci-app-openclash; then
     /etc/init.d/openclash stop
     /etc/init.d/openclash disable
   fi
@@ -24,11 +33,11 @@ if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-passwall")" -ne '0'
   uci set passwall.@global[0].when_chnroute_default_dns='chinadns_ng'
   
   # DNS配置：优先使用 AdGuardHome，其次是 mosdns
-  if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-adguardhome")" -ne '0' ]; then
+  if pkg_installed luci-app-adguardhome; then
     uci set passwall.@global[0].remote_dns='127.0.0.1:53'
     uci set passwall.@global[0].direct_dns_udp='127.0.0.1:53'
     uci set passwall.@global[0].tcp_node_socks_port='1070'
-  elif [ "$( opkg list-installed 2>/dev/null| grep -c "^mosdns")" -ne '0' ]; then
+  elif pkg_installed mosdns; then
     uci set passwall.@global[0].remote_dns='127.0.0.1:5335'
     uci set passwall.@global[0].direct_dns_udp='127.0.0.1:5335'
   fi

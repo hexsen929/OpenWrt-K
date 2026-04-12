@@ -559,8 +559,8 @@ def prepare_cfg(config: dict[str, Any],
         for line in content.splitlines():
             if line.startswith("  uci set aria2.main.bt_tracker="):
                 f.write(f"  uci set aria2.main.bt_tracker='{bt_tracker}'\n")
-            elif line.startswith("uci set network.lan.ipaddr="):
-                f.write(f"uci set network.lan.ipaddr='{config["openwrtext"]["ipaddr"]}'\n")
+            elif line.startswith("set_lan_ipaddr "):
+                f.write(f'set_lan_ipaddr "{config["openwrtext"]["ipaddr"]}"\n')
             elif "Compiled by 沉默の金" in line:
                 f.write(line.replace("Compiled by 沉默の金", f"Compiled by {compiler}") + "\n")
             else:
