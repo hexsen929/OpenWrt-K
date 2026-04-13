@@ -1,0 +1,227 @@
+<%+header%>
+
+<h2><%:OpenWrt-K 在线更新%></h2>
+<div class="cbi-map-descr">
+	从当前固件对应的 GitHub Releases 检查最新版并执行在线升级。<br />
+	升级文件会先下载到 <code>/tmp</code>，通过 <code>sysupgrade -T</code> 校验后再开始正式升级。<br />
+	建议升级前确认 <code>/tmp</code> 剩余空间足够，并做好配置备份。
+</div>
+
+<div class="cbi-section">
+	<table class="table" id="current-info">
+		<tr><th width="180">当前固件</th><td>读取中…</td></tr>
+	</table>
+</div>
+
+<div class="cbi-section">
+	<table class="table" id="latest-release">
+		<tr><th width="180">最新发布</th><td>尚未检查</td></tr>
+	</table>
+</div>
+
+<div class="cbi-section">
+	<div class="cbi-value">
+		<label class="cbi-value-title" for="asset_name">升级固件</label>
+		<div class="cbi-value-field">
+			<select id="asset_name" class="cbi-input-select" style="min-width: 32em;"></select>
+			<div class="cbi-value-description" id="asset-hint">将自动优先推荐与当前启动方式、根文件系统匹配的镜像。</div>
+		</div>
+	</div>
+	<div class="cbi-value">
+		<label class="cbi-value-title" for="keep_settings">保留配置</label>
+		<div class="cbi-value-field">
+			<label>
+				<input type="checkbox" id="keep_settings" checked="checked" />
+				保留当前配置后升级
+			</label>
+		</div>
+	</div>
+	<div class="right">
+		<input class="btn cbi-button cbi-button-neutral" type="button" value="检查更新" onclick="checkRelease()" />
+		<input class="btn cbi-button cbi-button-apply" id="start-upgrade" type="button" value="开始升级" onclick="startUpgrade()" />
+	</div>
+</div>
+
+<div class="cbi-section">
+	<table class="table" id="task-status">
+		<tr><th width="180">任务状态</th><td>空闲</td></tr>
+	</table>
+</div>
+
+<div class="cbi-section">
+	<h3>后台日志</h3>
+	<pre id="task-log" style="white-space: pre-wrap; word-break: break-all; max-height: 24em; overflow: auto;">暂无日志</pre>
+</div>
+
+<script type="text/javascript">
+//<![CDATA[
+var checkUrl = '<%=url("admin/system/openwrt-k-update/check")%>';
+var statusUrl = '<%=url("admin/system/openwrt-k-update/status")%>';
+var upgradeUrl = '<%=url("admin/system/openwrt-k-update/upgrade")%>';
+
+function esc(str) {
+	if (str === null || str === undefined)
+		return '';
+	return String(str)
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#39;');
+}
+
+function setRows(elId, rows) {
+	var html = [];
+	for (var i = 0; i < rows.length; i++) {
+		html.push('<tr><th width="180">' + esc(rows[i][0]) + '</th><td>' + rows[i][1] + '</td></tr>');
+	}
+	document.getElementById(elId).innerHTML = html.join('');
+}
+
+function renderCurrent(current) {
+	if (!current)
+		return;
+
+	setRows('current-info', [
+		['系统', esc(current.system || '-')],
+		['版本', esc(current.release || '-') + (current.revision ? ' / ' + esc(current.revision) : '')],
+		['架构', esc(current.architecture || '-')],
+		['目标平台', esc(current.target || '-')],
+		['启动方式', esc(current.boot_mode || '-')],
+		['根文件系统', esc(current.rootfs_type || '-')],
+		['编译者', esc(current.compiler || '-')],
+		['编译时间', esc(current.compile_start_time || '-')],
+		['仓库', current.repository_url ? '<a href="' + esc(current.repository_url) + '" target="_blank" rel="noopener noreferrer">' + esc(current.repository_url) + '</a>' : '-'],
+		['/tmp 剩余空间', esc(current.temp_free || '-')]
+	]);
+}
+
+function renderLatest(latest, error) {
+	var rows = [];
+	var select = document.getElementById('asset_name');
+	var selectedValue = select.value;
+	select.innerHTML = '';
+
+	if (!latest) {
+		rows.push(['最新发布', error ? '<span style="color:#c00;">' + esc(error) + '</span>' : '尚未检查']);
+		setRows('latest-release', rows);
+		document.getElementById('asset-hint').innerHTML = '请先点击“检查更新”。';
+		return;
+	}
+
+	rows.push(['发布版本', esc(latest.tag_name || '-')]);
+	rows.push(['发布时间', esc(latest.published_at || '-')]);
+	rows.push(['发布页面', latest.html_url ? '<a href="' + esc(latest.html_url) + '" target="_blank" rel="noopener noreferrer">打开 GitHub Release</a>' : '-']);
+	rows.push(['推荐固件', esc(latest.recommended_asset || '-')]);
+	rows.push(['可选固件数量', esc((latest.assets || []).length)]);
+	setRows('latest-release', rows);
+
+	var assets = latest.assets || [];
+	for (var i = 0; i < assets.length; i++) {
+		var asset = assets[i];
+		var opt = document.createElement('option');
+		opt.value = asset.name;
+		opt.text = asset.name + ' (' + (asset.size_human || '-') + ')' + (asset.recommended ? ' [推荐]' : '');
+		if ((selectedValue && asset.name === selectedValue) || (!selectedValue && asset.recommended))
+			opt.selected = true;
+		select.appendChild(opt);
+	}
+
+	if (!assets.length) {
+		var empty = document.createElement('option');
+		empty.value = '';
+		empty.text = '当前发布未找到可在线升级的固件文件';
+		select.appendChild(empty);
+		document.getElementById('asset-hint').innerHTML = '该 release 中没有匹配的固件资产。';
+	} else {
+		document.getElementById('asset-hint').innerHTML = '优先选择推荐镜像；如果你的磁盘布局比较特殊，也可以手动切换。';
+	}
+}
+
+function renderTask(task) {
+	if (!task)
+		return;
+
+	var stateMap = {
+		idle: '空闲',
+		downloading: '下载中',
+		validating: '校验中',
+		rebooting: '升级中 / 即将重启',
+		error: '失败'
+	};
+
+	setRows('task-status', [
+		['状态', esc(stateMap[task.state] || task.state || 'idle')],
+		['说明', esc(task.message || '-')],
+		['目标版本', esc(task.release_tag || '-')],
+		['固件文件', esc(task.asset_name || '-')],
+		['保留配置', task.keep_settings ? '是' : '否'],
+		['更新时间', esc(task.updated_at || '-')]
+	]);
+
+	document.getElementById('task-log').textContent = task.log || '暂无日志';
+
+	var running = task.state === 'downloading' || task.state === 'validating' || task.state === 'rebooting';
+	document.getElementById('start-upgrade').disabled = running;
+}
+
+function checkRelease() {
+	XHR.get(checkUrl, null, function(x, data) {
+		if (!data) {
+			renderLatest(null, '请求失败');
+			return;
+		}
+		renderCurrent(data.current);
+		renderTask(data.task);
+		if (data.ok)
+			renderLatest(data.latest);
+		else
+			renderLatest(null, data.error || '检查失败');
+	});
+}
+
+function startUpgrade() {
+	var select = document.getElementById('asset_name');
+	var assetName = select && select.value ? select.value : '';
+	if (!assetName) {
+		alert('请先检查更新并选择一个固件文件');
+		return;
+	}
+
+	if (!confirm('确定开始在线升级吗？下载完成并校验通过后将自动执行 sysupgrade。')) {
+		return;
+	}
+
+	XHR.post(upgradeUrl, {
+		asset_name: assetName,
+		keep_settings: document.getElementById('keep_settings').checked ? '1' : '0'
+	}, function(x, data) {
+		if (!data) {
+			alert('启动升级任务失败');
+			return;
+		}
+		if (!data.ok) {
+			alert(data.error || '启动升级任务失败');
+			return;
+		}
+		if (data.latest)
+			renderLatest(data.latest);
+		if (data.task)
+			renderTask(data.task);
+	});
+}
+
+XHR.poll(5, statusUrl, null, function(x, data) {
+	if (!data)
+		return;
+	renderCurrent(data.current);
+	renderTask(data.task);
+	if (data.latest)
+		renderLatest(data.latest);
+});
+
+checkRelease();
+//]]>
+</script>
+
+<%+footer%>

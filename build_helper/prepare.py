@@ -400,6 +400,21 @@ def prepare_cfg(config: dict[str, Any],
                         msg = f"{cfg_name} 应用luci-app-tailscale Tailscale文件冲突修复补丁失败"
                         raise RuntimeError(msg)
 
+    local_packages_path = os.path.join(paths.openwrt_k, "packages")
+    if os.path.isdir(local_packages_path):
+        logger.info("%s复制本地软件包...", cfg_name)
+        for pkg_name in sorted(os.listdir(local_packages_path)):
+            pkg_path = os.path.join(local_packages_path, pkg_name)
+            if not os.path.isdir(pkg_path):
+                continue
+            path = os.path.join(openwrt.path, "package", "cmzj_packages", pkg_name)
+            logger.debug("复制本地软件包 %s 到 %s", pkg_name, path)
+            if os.path.exists(path):
+                shutil.rmtree(path)
+            shutil.copytree(pkg_path, path, symlinks=True)
+            if os.path.isdir(os.path.join(path, ".git")):
+                shutil.rmtree(os.path.join(path, ".git"))
+
     # 替换golang版本
     golang_path = os.path.join(openwrt.path, "feeds", "packages", "lang", "golang")
     shutil.rmtree(golang_path)

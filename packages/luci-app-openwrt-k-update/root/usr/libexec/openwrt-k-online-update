@@ -1,0 +1,68 @@
+#!/bin/sh
+
+set -u
+
+URL="$1"
+IMAGE_PATH="$2"
+STATUS_FILE="$3"
+LOG_FILE="$4"
+RELEASE_TAG="$5"
+ASSET_NAME="$6"
+KEEP="$7"
+
+write_state() {
+	local state="$1"
+	local message="$2"
+
+	{
+		echo "STATE=$state"
+		echo "MESSAGE=$message"
+		echo "RELEASE_TAG=$RELEASE_TAG"
+		echo "ASSET_NAME=$ASSET_NAME"
+		echo "IMAGE_PATH=$IMAGE_PATH"
+		echo "KEEP=$KEEP"
+		echo "UPDATED_AT=$(date '+%Y-%m-%d %H:%M:%S')"
+	} > "$STATUS_FILE"
+}
+
+mkdir -p "$(dirname "$STATUS_FILE")" "$(dirname "$LOG_FILE")" "$(dirname "$IMAGE_PATH")"
+rm -f "$IMAGE_PATH"
+
+exec >>"$LOG_FILE" 2>&1
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] 开始处理在线升级任务"
+echo "Release: $RELEASE_TAG"
+echo "Asset: $ASSET_NAME"
+echo "Keep settings: $KEEP"
+
+if ! command -v curl >/dev/null 2>&1; then
+	write_state "error" "系统缺少 curl，无法下载固件"
+	exit 1
+fi
+
+if ! command -v sysupgrade >/dev/null 2>&1; then
+	write_state "error" "系统缺少 sysupgrade，无法执行升级"
+	exit 1
+fi
+
+write_state "downloading" "正在下载固件到 /tmp，请稍候"
+if ! curl -fL --retry 3 --connect-timeout 20 --output "$IMAGE_PATH" "$URL"; then
+	write_state "error" "下载固件失败，请检查网络或 GitHub 连通性"
+	exit 1
+fi
+
+write_state "validating" "下载完成，正在校验固件镜像"
+if ! sysupgrade -T "$IMAGE_PATH"; then
+	write_state "error" "固件校验失败，已停止升级"
+	exit 1
+fi
+
+sync
+write_state "rebooting" "固件校验通过，正在执行 sysupgrade，设备即将重启"
+sleep 2
+
+if [ "$KEEP" = "1" ]; then
+	exec sysupgrade "$IMAGE_PATH"
+else
+	exec sysupgrade -n "$IMAGE_PATH"
+fi
