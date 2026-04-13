@@ -1,0 +1,10 @@
+--- a/root/usr/share/passwall/utils.sh
++++ b/root/usr/share/passwall/utils.sh
+@@
+-RULES_PATH=/usr/share/${CONFIG}/rules
+-
+-. /lib/functions/network.sh
++RULES_PATH=/usr/share/${CONFIG}/rules
++ROOT="${IPKG_INSTROOT:-${ROOT:-}}"
++
++. "${ROOT}/lib/functions/network.sh"

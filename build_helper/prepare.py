@@ -373,6 +373,13 @@ def prepare_cfg(config: dict[str, Any],
                 if not apply_patch(f.read(), path):
                     msg = f"{cfg_name} 应用vlmcsd APK版本号修复补丁失败"
                     raise RuntimeError(msg)
+        if pkg_name == "luci-app-passwall":
+            logger.info("%s为luci-app-passwall应用ImageBuilder环境兼容补丁", cfg_name)
+            passwall_patch_path = os.path.join(paths.openwrt_k, "patches", "passwall-fix-ipkg-instroot-network-sh.patch")
+            with open(passwall_patch_path, encoding="utf-8") as f:
+                if not apply_patch(f.read(), path):
+                    msg = f"{cfg_name} 应用luci-app-passwall ImageBuilder环境兼容补丁失败"
+                    raise RuntimeError(msg)
         if pkg_name == "hexsen929":
             remove_duplicate_feed_packages(path, openwrt.path, config["openwrt"])
             fileassistant_path = os.path.join(path, "luci-app-fileassistant")
