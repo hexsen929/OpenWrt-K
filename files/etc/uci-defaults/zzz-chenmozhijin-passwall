@@ -8,6 +8,12 @@ pkg_installed() {
   fi
 }
 
+has_custom_passwall_config() {
+  local tcp_node
+  tcp_node="$(uci -q get passwall.@global[0].tcp_node)"
+  [ -n "$tcp_node" ] && [ "$tcp_node" != "myshunt" ]
+}
+
 sleep 5
 [ ! -s "/etc/config/passwall" ] && sleep 5
 [ ! -s "/etc/config/passwall" ] && sleep 5
@@ -18,13 +24,18 @@ sleep 5
 
 # 检查是否安装了 PassWall，如果安装了则禁用 OpenClash
 if pkg_installed luci-app-passwall; then
+  if has_custom_passwall_config; then
+    echo "检测到已有 PassWall 配置，跳过默认初始化以保留用户设置"
+    exit 0
+  fi
+
   if pkg_installed luci-app-openclash; then
     /etc/init.d/openclash stop
     /etc/init.d/openclash disable
   fi
 
   # 基本配置
-  uci set passwall.@global[0].enabled='1'
+  uci set passwall.@global[0].enabled='0'
   uci set passwall.@global[0].tcp_node='myshunt'
   uci set passwall.@global[0].udp_node='tcp'
   uci set passwall.@global[0].dns_mode='udp'
