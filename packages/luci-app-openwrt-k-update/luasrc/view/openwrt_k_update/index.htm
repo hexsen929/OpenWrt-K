@@ -7,6 +7,8 @@
 	建议升级前确认 <code>/tmp</code> 剩余空间足够，并做好配置备份。
 </div>
 
+<div id="action-feedback" class="alert-message notice" style="display:none; margin-bottom: 1em;"></div>
+
 <div class="cbi-section">
 	<table class="table" id="current-info">
 		<tr><th width="180">当前固件</th><td>读取中…</td></tr>
@@ -37,7 +39,7 @@
 		</div>
 	</div>
 	<div class="right">
-		<input class="btn cbi-button cbi-button-neutral" type="button" value="检查更新" onclick="checkRelease()" />
+		<input class="btn cbi-button cbi-button-neutral" id="check-release" type="button" value="检查更新" onclick="checkRelease()" />
 		<input class="btn cbi-button cbi-button-apply" id="start-upgrade" type="button" value="开始升级" onclick="startUpgrade()" />
 	</div>
 </div>
@@ -46,6 +48,15 @@
 	<table class="table" id="task-status">
 		<tr><th width="180">任务状态</th><td>空闲</td></tr>
 	</table>
+</div>
+
+<div class="cbi-section">
+	<div style="max-width: 42em;">
+		<div id="task-progress-text" style="margin-bottom: .4em;">当前无下载任务</div>
+		<div style="width:100%; background:#eee; border-radius:6px; overflow:hidden;">
+			<div id="task-progress-bar" style="width:0%; height:14px; line-height:14px; background:#4b8bff; transition:width .2s ease;"></div>
+		</div>
+	</div>
 </div>
 
 <div class="cbi-section">
@@ -58,6 +69,21 @@
 var checkUrl = '<%=url("admin/system/openwrt-k-update/check")%>';
 var statusUrl = '<%=url("admin/system/openwrt-k-update/status")%>';
 var upgradeUrl = '<%=url("admin/system/openwrt-k-update/upgrade")%>';
+var checkBtn;
+var upgradeBtn;
+
+function setFeedback(message, type) {
+	var el = document.getElementById('action-feedback');
+	if (!message) {
+		el.style.display = 'none';
+		el.innerHTML = '';
+		el.className = 'alert-message notice';
+		return;
+	}
+	el.style.display = '';
+	el.className = 'alert-message ' + (type || 'notice');
+	el.innerHTML = esc(message);
+}
 
 function esc(str) {
 	if (str === null || str === undefined)
@@ -155,28 +181,50 @@ function renderTask(task) {
 		['说明', esc(task.message || '-')],
 		['目标版本', esc(task.release_tag || '-')],
 		['固件文件', esc(task.asset_name || '-')],
+		['下载进度', task.total_size > 0 ? esc(task.downloaded_size_human || '0 B') + ' / ' + esc(task.total_size_human || '-') + ' (' + esc(task.progress || 0) + '%)' : (task.state === 'validating' || task.state === 'rebooting' ? '100%' : '-')],
 		['保留配置', task.keep_settings ? '是' : '否'],
 		['更新时间', esc(task.updated_at || '-')]
 	]);
 
 	document.getElementById('task-log').textContent = task.log || '暂无日志';
+	document.getElementById('task-progress-bar').style.width = String(task.progress || 0) + '%';
+	document.getElementById('task-progress-text').textContent =
+		task.total_size > 0
+			? '下载进度：' + (task.downloaded_size_human || '0 B') + ' / ' + (task.total_size_human || '-') + '（' + (task.progress || 0) + '%）'
+			: (task.state === 'validating' || task.state === 'rebooting'
+				? '下载已完成，正在处理固件'
+				: '当前无下载任务');
 
 	var running = task.state === 'downloading' || task.state === 'validating' || task.state === 'rebooting';
-	document.getElementById('start-upgrade').disabled = running;
+	upgradeBtn.disabled = running;
+	checkBtn.disabled = running;
+	if (running)
+		upgradeBtn.value = task.state === 'downloading' ? '下载中...' : (task.state === 'validating' ? '校验中...' : '升级中...');
+	else
+		upgradeBtn.value = '开始升级';
 }
 
 function checkRelease() {
+	setFeedback('正在检查最新发布...', 'notice');
+	checkBtn.disabled = true;
+	checkBtn.value = '检查中...';
 	XHR.get(checkUrl, null, function(x, data) {
+		checkBtn.disabled = false;
+		checkBtn.value = '检查更新';
 		if (!data) {
+			setFeedback('检查更新请求失败', 'warning');
 			renderLatest(null, '请求失败');
 			return;
 		}
 		renderCurrent(data.current);
 		renderTask(data.task);
-		if (data.ok)
+		if (data.ok) {
+			setFeedback('已刷新最新发布信息', 'success');
 			renderLatest(data.latest);
-		else
+		} else {
+			setFeedback(data.error || '检查失败', 'warning');
 			renderLatest(null, data.error || '检查失败');
+		}
 	});
 }
 
@@ -192,18 +240,26 @@ function startUpgrade() {
 		return;
 	}
 
+	setFeedback('正在创建升级任务...', 'notice');
+	upgradeBtn.disabled = true;
+	upgradeBtn.value = '启动中...';
 	XHR.post(upgradeUrl, {
 		asset_name: assetName,
 		keep_settings: document.getElementById('keep_settings').checked ? '1' : '0'
 	}, function(x, data) {
 		if (!data) {
-			alert('启动升级任务失败');
+			setFeedback('启动升级任务失败', 'warning');
+			upgradeBtn.disabled = false;
+			upgradeBtn.value = '开始升级';
 			return;
 		}
 		if (!data.ok) {
-			alert(data.error || '启动升级任务失败');
+			setFeedback(data.error || '启动升级任务失败', 'warning');
+			upgradeBtn.disabled = false;
+			upgradeBtn.value = '开始升级';
 			return;
 		}
+		setFeedback(data.message || '升级任务已启动', 'success');
 		if (data.latest)
 			renderLatest(data.latest);
 		if (data.task)
@@ -218,8 +274,14 @@ XHR.poll(5, statusUrl, null, function(x, data) {
 	renderTask(data.task);
 	if (data.latest)
 		renderLatest(data.latest);
+	if (data.task && data.task.state === 'error')
+		setFeedback(data.task.message || '在线升级失败', 'warning');
+	else if (data.task && data.task.state === 'rebooting')
+		setFeedback(data.task.message || '固件校验通过，设备即将重启', 'success');
 });
 
+checkBtn = document.getElementById('check-release');
+upgradeBtn = document.getElementById('start-upgrade');
 checkRelease();
 //]]>
 </script>

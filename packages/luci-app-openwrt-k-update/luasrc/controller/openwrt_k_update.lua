@@ -276,14 +276,36 @@ end
 local function read_task_status()
     local data = parse_kv_file(STATUS_FILE)
     local log = util.trim(sys.exec("tail -n 50 " .. shell_quote(LOG_FILE) .. " 2>/dev/null"))
+    local image_path = data.IMAGE_PATH or IMAGE_PATH
+    local total_size = tonumber(data.TOTAL_SIZE or "0") or 0
+    local downloaded_size = 0
+    local progress = 0
+    local image_stat = fs.stat(image_path)
+
+    if image_stat and image_stat.type == "reg" then
+        downloaded_size = tonumber(image_stat.size or 0) or 0
+    end
+    if total_size > 0 then
+        progress = math.floor((downloaded_size * 10000) / total_size + 0.5) / 100
+        if progress > 100 then
+            progress = 100
+        end
+    elseif data.STATE == "validating" or data.STATE == "rebooting" then
+        progress = 100
+    end
 
     return {
         state = data.STATE or "idle",
         message = data.MESSAGE or "",
         release_tag = data.RELEASE_TAG or "",
         asset_name = data.ASSET_NAME or "",
-        image_path = data.IMAGE_PATH or "",
+        image_path = image_path,
         keep_settings = data.KEEP == "1",
+        total_size = total_size,
+        total_size_human = format_bytes(total_size),
+        downloaded_size = downloaded_size,
+        downloaded_size_human = format_bytes(downloaded_size),
+        progress = progress,
         updated_at = data.UPDATED_AT or "",
         log = log
     }
@@ -300,7 +322,7 @@ local function selected_asset(release, asset_name)
 end
 
 
-local function write_task_status(state, message, release_tag, asset_name, keep_settings)
+local function write_task_status(state, message, release_tag, asset_name, keep_settings, total_size)
     local content = table.concat({
         "STATE=" .. (state or "idle"),
         "MESSAGE=" .. (message or ""),
@@ -308,6 +330,7 @@ local function write_task_status(state, message, release_tag, asset_name, keep_s
         "ASSET_NAME=" .. (asset_name or ""),
         "IMAGE_PATH=" .. IMAGE_PATH,
         "KEEP=" .. (keep_settings and "1" or "0"),
+        "TOTAL_SIZE=" .. tostring(total_size or 0),
         "UPDATED_AT=" .. os.date("%Y-%m-%d %H:%M:%S")
     }, "\n")
     fs.writefile(STATUS_FILE, content .. "\n")
@@ -387,10 +410,10 @@ function action_upgrade()
     fs.remove(LOG_FILE)
     fs.remove(IMAGE_PATH)
     sys.call("mkdir -p " .. shell_quote(IMAGE_DIR))
-    write_task_status("downloading", "升级任务已创建，准备开始下载固件", release.tag_name, asset.name, keep_settings)
+    write_task_status("downloading", "升级任务已创建，准备开始下载固件", release.tag_name, asset.name, keep_settings, asset.size)
 
     local command = string.format(
-        "(%s %s %s %s %s %s %s %s) >/dev/null 2>&1 &",
+        "(%s %s %s %s %s %s %s %s %s) >/dev/null 2>&1 &",
         shell_quote(RUNNER),
         shell_quote(asset.url),
         shell_quote(IMAGE_PATH),
@@ -398,6 +421,7 @@ function action_upgrade()
         shell_quote(LOG_FILE),
         shell_quote(release.tag_name),
         shell_quote(asset.name),
+        shell_quote(tostring(asset.size or 0)),
         keep_settings and "1" or "0"
     )
 
