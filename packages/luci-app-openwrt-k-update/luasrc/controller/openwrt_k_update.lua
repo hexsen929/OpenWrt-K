@@ -145,6 +145,10 @@ local function current_info()
         repository = repository_path(info.REPOSITORY_URL),
         tag_suffix = info.TAG_SUFFIX,
         compile_start_time = info.COMPILE_START_TIME,
+        build_run_id = info.BUILD_RUN_ID,
+        build_commit = info.BUILD_COMMIT,
+        release_tag = info.RELEASE_TAG,
+        release_name = info.RELEASE_NAME,
         rootfs_type = detect_rootfs_type(),
         boot_mode = detect_boot_mode(),
         temp_free = util.trim(sys.exec([[df -k /tmp | awk 'NR==2 {print $4 " KiB"}']]))
@@ -204,6 +208,23 @@ local function choose_recommended_asset(info, assets)
 end
 
 
+local function parse_release_metadata(body)
+    local metadata = {}
+    if type(body) ~= "string" or body == "" then
+        return metadata
+    end
+
+    for line in body:gmatch("[^\r\n]+") do
+        local key, value = line:match("^(OPENWRT_K_[A-Z0-9_]+)=(.+)$")
+        if key and value then
+            metadata[key] = util.trim(value)
+        end
+    end
+
+    return metadata
+end
+
+
 local function simplify_release(info, release)
     local assets = {}
     for _, asset in ipairs(release.assets or {}) do
@@ -223,14 +244,67 @@ local function simplify_release(info, release)
         asset.recommended = asset.name == recommended_asset
     end
 
+    local metadata = parse_release_metadata(release.body)
+
     return {
         tag_name = release.tag_name,
         name = release.name,
         html_url = release.html_url,
         published_at = release.published_at,
+        artifact_run_id = metadata.OPENWRT_K_ARTIFACT_RUN_ID,
+        build_commit = metadata.OPENWRT_K_BUILD_COMMIT,
+        compile_start_time = metadata.OPENWRT_K_COMPILE_START_TIME,
         assets = assets,
         recommended_asset = recommended_asset
     }
+end
+
+
+local function compare_release_version(info, release)
+    local current_release_tag = util.trim(info.release_tag or "")
+    local latest_release_tag = util.trim(release.tag_name or "")
+    if current_release_tag ~= "" and latest_release_tag ~= "" then
+        if current_release_tag == latest_release_tag then
+            return "current", "当前已是最新版本"
+        end
+        return "outdated", "检测到新版本，可按需升级"
+    end
+
+    local current_run_id = tostring(info.build_run_id or "")
+    local latest_run_id = tostring(release.artifact_run_id or "")
+    if current_run_id ~= "" and latest_run_id ~= "" then
+        if current_run_id == latest_run_id then
+            return "current", "当前已是最新版本"
+        end
+        return "outdated", "检测到新版本，可按需升级"
+    end
+
+    local current_commit = util.trim(info.build_commit or "")
+    local latest_commit = util.trim(release.build_commit or "")
+    local current_compile_time = util.trim(info.compile_start_time or "")
+    local latest_compile_time = util.trim(release.compile_start_time or "")
+    if current_commit ~= "" and latest_commit ~= "" and current_compile_time ~= "" and latest_compile_time ~= "" then
+        if current_commit == latest_commit and current_compile_time == latest_compile_time then
+            return "current", "当前已是最新版本"
+        end
+        return "outdated", "检测到新版本，可按需升级"
+    end
+
+    return "unknown", "已获取最新发布信息，但当前固件缺少可比对的版本标识"
+end
+
+
+local function decorate_release(info, release)
+    if not release then
+        return nil
+    end
+
+    local version_status, version_status_message = compare_release_version(info, release)
+    release.version_status = version_status
+    release.version_status_message = version_status_message
+    release.is_current = version_status == "current"
+    release.update_available = version_status == "outdated"
+    return release
 end
 
 
@@ -263,7 +337,7 @@ local function latest_release(info)
 
     for _, release in ipairs(releases) do
         if not release.draft and release.tag_name and release.tag_name:find(info.tag_suffix, 1, true) then
-            local data = simplify_release(info, release)
+            local data = decorate_release(info, simplify_release(info, release))
             save_release_cache(data)
             return data
         end
@@ -338,10 +412,16 @@ end
 
 
 function action_status()
+    local info = current_info()
+    local latest = load_release_cache()
+    if latest then
+        latest = decorate_release(info, latest)
+    end
+
     write_json({
         ok = true,
-        current = current_info(),
-        latest = load_release_cache(),
+        current = info,
+        latest = latest,
         task = read_task_status()
     })
 end

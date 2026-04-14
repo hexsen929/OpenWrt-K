@@ -104,6 +104,29 @@ function setRows(elId, rows) {
 	document.getElementById(elId).innerHTML = html.join('');
 }
 
+function shortHash(hash) {
+	if (!hash)
+		return '-';
+	hash = String(hash);
+	return hash.length > 12 ? hash.substring(0, 12) : hash;
+}
+
+function getVersionStatus(latest) {
+	if (!latest)
+		return { message: '尚未检查', type: 'notice' };
+	if (latest.version_status === 'current')
+		return { message: latest.version_status_message || '当前已是最新版本', type: 'success' };
+	if (latest.version_status === 'outdated')
+		return { message: latest.version_status_message || '检测到新版本，可按需升级', type: 'notice' };
+	return { message: latest.version_status_message || '已获取最新发布信息，但暂时无法判断当前是否为最新版本', type: 'notice' };
+}
+
+function renderVersionStatus(latest) {
+	var status = getVersionStatus(latest);
+	var color = status.type === 'success' ? '#2d8a34' : (latest && latest.version_status === 'outdated' ? '#d46b08' : '#666');
+	return '<span style="color:' + color + '; font-weight:600;">' + esc(status.message) + '</span>';
+}
+
 function renderCurrent(current) {
 	if (!current)
 		return;
@@ -115,8 +138,10 @@ function renderCurrent(current) {
 		['目标平台', esc(current.target || '-')],
 		['启动方式', esc(current.boot_mode || '-')],
 		['根文件系统', esc(current.rootfs_type || '-')],
+		['固件标识', current.release_tag ? esc(current.release_tag) : (current.build_run_id ? 'Run #' + esc(current.build_run_id) : '-')],
 		['编译者', esc(current.compiler || '-')],
 		['编译时间', esc(current.compile_start_time || '-')],
+		['源码提交', esc(shortHash(current.build_commit || '-'))],
 		['仓库', current.repository_url ? '<a href="' + esc(current.repository_url) + '" target="_blank" rel="noopener noreferrer">' + esc(current.repository_url) + '</a>' : '-'],
 		['/tmp 剩余空间', esc(current.temp_free || '-')]
 	]);
@@ -136,8 +161,11 @@ function renderLatest(latest, error) {
 	}
 
 	rows.push(['发布版本', esc(latest.tag_name || '-')]);
+	rows.push(['发布名称', esc(latest.name || '-')]);
+	rows.push(['当前状态', renderVersionStatus(latest)]);
 	rows.push(['发布时间', esc(latest.published_at || '-')]);
 	rows.push(['发布页面', latest.html_url ? '<a href="' + esc(latest.html_url) + '" target="_blank" rel="noopener noreferrer">打开 GitHub Release</a>' : '-']);
+	rows.push(['构建运行ID', latest.artifact_run_id ? 'Run #' + esc(latest.artifact_run_id) : '-']);
 	rows.push(['推荐固件', esc(latest.recommended_asset || '-')]);
 	rows.push(['可选固件数量', esc((latest.assets || []).length)]);
 	setRows('latest-release', rows);
@@ -219,7 +247,8 @@ function checkRelease() {
 		renderCurrent(data.current);
 		renderTask(data.task);
 		if (data.ok) {
-			setFeedback('已刷新最新发布信息', 'success');
+			var status = getVersionStatus(data.latest);
+			setFeedback(status.message, status.type);
 			renderLatest(data.latest);
 		} else {
 			setFeedback(data.error || '检查失败', 'warning');

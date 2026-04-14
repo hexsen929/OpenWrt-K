@@ -12,6 +12,7 @@ from multiprocessing.pool import Pool
 from typing import Any
 
 import pygit2
+from actions_toolkit.github import Context
 
 from .utils.downloader import DLTask, dl2, wait_dl_tasks
 from .utils.error import ConfigError, ConfigParseError
@@ -19,7 +20,7 @@ from .utils.logger import logger
 from .utils.network import get_gh_repo_last_releases, request_get
 from .utils.openwrt import OpenWrt
 from .utils.paths import paths
-from .utils.repo import compiler, get_release_suffix, user_repo
+from .utils.repo import compiler, get_current_commit, get_release_suffix, user_repo
 from .utils.upload import uploader
 from .utils.utils import apply_patch, parse_config, parse_optional_config
 
@@ -605,9 +606,12 @@ def prepare_cfg(config: dict[str, Any],
     config["target"], config["subtarget"] = openwrt.get_target()
 
     with open(os.path.join(openwrt.files, "etc", "openwrt-k_info"), "w", encoding="utf-8") as f:
+        context = Context()
         content = ""
         content += f'COMPILE_START_TIME="{datetime.now(timezone(timedelta(hours=8))).strftime('%y.%m.%d-%H')}"\n'
         content += f'COMPILER="{compiler}"\n'
+        content += f'BUILD_RUN_ID="{context.run_id or ""}"\n'
+        content += f'BUILD_COMMIT="{get_current_commit()}"\n'
         content += f'REPOSITORY_URL="https://github.com/{user_repo}"\n'
         content += f'TAG_SUFFIX="{get_release_suffix(config)[1]}"\n'
         f.write(content)
