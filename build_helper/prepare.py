@@ -101,6 +101,42 @@ def remove_duplicate_feed_packages(ext_path: str, openwrt_path: str, config_text
         removed_dirs.add(root)
 
 
+def fix_turboacc_952_patch_for_linux_6_12(patch_path: str) -> None:
+    """修正 turboacc 952 补丁在较新 Linux 6.12 内核上的过期上下文。"""
+    if not os.path.isfile(patch_path):
+        return
+
+    with open(patch_path, encoding="utf-8") as f:
+        content = f.read()
+
+    old_hunk = (
+        "@@ -3143,6 +3151,7 @@ errout:\n"
+        " \treturn 0;\n"
+        " }\n"
+        " #endif\n"
+        "+#endif\n"
+        " static int ctnetlink_exp_done(struct netlink_callback *cb)\n"
+        " {\n"
+        " \tif (cb->args[1])\n"
+    )
+    new_hunk = (
+        "@@ -3125,6 +3133,7 @@ errout:\n"
+        " \treturn 0;\n"
+        " }\n"
+        " #endif\n"
+        "+#endif\n"
+        " \n"
+        " static unsigned long ctnetlink_exp_id(const struct nf_conntrack_expect *exp)\n"
+        " {\n"
+    )
+    if old_hunk not in content:
+        return
+
+    with open(patch_path, "w", encoding="utf-8") as f:
+        f.write(content.replace(old_hunk, new_hunk))
+    logger.info("已修正 turboacc 952 补丁以兼容 Linux 6.12 新版 nf_conntrack_netlink.c")
+
+
 def parse_configs() -> dict[str, dict[str, Any]]:
     """解析配置文件"""
     configs: dict[str, dict] = {}
@@ -444,8 +480,10 @@ def prepare_cfg(config: dict[str, Any],
     if enable_fullcone or enable_sfe:
         logger.info("%s添加952补丁", cfg_name)
         patch925 = f"952{"-add" if kernel_version != "5.10" else ""}-net-conntrack-events-support-multiple-registrant.patch"
-        shutil.copy2(os.path.join(turboacc_dir, f"hack-{kernel_version}", patch925),
-                     os.path.join(openwrt.path, "target", "linux", "generic", f"hack-{kernel_version}", patch925))
+        patch925_dst = os.path.join(openwrt.path, "target", "linux", "generic", f"hack-{kernel_version}", patch925)
+        shutil.copy2(os.path.join(turboacc_dir, f"hack-{kernel_version}", patch925), patch925_dst)
+        if kernel_version == "6.12":
+            fix_turboacc_952_patch_for_linux_6_12(patch925_dst)
         logger.info("%s附加内核配置CONFIG_NF_CONNTRACK_CHAIN_EVENTS", cfg_name)
         with open(os.path.join(openwrt.path, "target", "linux", "generic", f"config-{kernel_version}"), "a") as f:
             f.write("\n# CONFIG_NF_CONNTRACK_CHAIN_EVENTS is not set")
