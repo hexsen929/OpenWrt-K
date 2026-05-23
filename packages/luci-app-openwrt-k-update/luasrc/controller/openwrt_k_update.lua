@@ -129,6 +129,65 @@ local function repository_path(repository_url)
 end
 
 
+local function parse_openwrt_k_tag_suffix(value)
+    if not value or value == "" then
+        return nil
+    end
+
+    local target, openwrt_version, config_name = value:match("^%(([^%)]+)%)%-%(([^%)]+)%)%-(.+)$")
+    if target and openwrt_version and config_name then
+        return {
+            target = target,
+            openwrt_version = openwrt_version,
+            config_name = config_name
+        }
+    end
+
+    return nil
+end
+
+
+local function parse_release_tag_name(tag_name)
+    if not tag_name or tag_name == "" then
+        return nil
+    end
+
+    local target, openwrt_version, config_name = tag_name:match("%(([^%)]+)%)%-%(([^%)]+)%)%-(.+)$")
+    if target and openwrt_version and config_name then
+        return {
+            target = target,
+            openwrt_version = openwrt_version,
+            config_name = config_name
+        }
+    end
+
+    return nil
+end
+
+
+local function is_matching_release(info, release)
+    local tag_name = release and release.tag_name
+    if not tag_name or tag_name == "" then
+        return false
+    end
+
+    -- 兼容旧逻辑：完整 TAG_SUFFIX 命中时一定认为匹配。
+    if info.tag_suffix and info.tag_suffix ~= "" and tag_name:find(info.tag_suffix, 1, true) then
+        return true
+    end
+
+    -- 支持跨 openwrt_tag/branch 更新：只要求 target/subtarget 与配置名一致。
+    -- 例如允许 (x86-64)-(v25.12.2)-x86_64 -> (x86-64)-(v25.12.3)-x86_64。
+    local current_tag = parse_openwrt_k_tag_suffix(info.tag_suffix)
+    local release_tag = parse_release_tag_name(tag_name)
+    if not current_tag or not release_tag then
+        return false
+    end
+
+    return current_tag.target == release_tag.target and current_tag.config_name == release_tag.config_name
+end
+
+
 local function current_info()
     local release = parse_kv_file(RELEASE_FILE)
     local info = parse_kv_file(INFO_FILE)
@@ -336,7 +395,7 @@ local function latest_release(info)
     end
 
     for _, release in ipairs(releases) do
-        if not release.draft and release.tag_name and release.tag_name:find(info.tag_suffix, 1, true) then
+        if not release.draft and is_matching_release(info, release) then
             local data = decorate_release(info, simplify_release(info, release))
             save_release_cache(data)
             return data
