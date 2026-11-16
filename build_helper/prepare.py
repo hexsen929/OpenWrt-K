@@ -137,6 +137,30 @@ def fix_turboacc_952_patch_for_linux_6_12(patch_path: str) -> None:
     logger.info("已修正 turboacc 952 补丁以兼容 Linux 6.12 新版 nf_conntrack_netlink.c")
 
 
+def fix_versioned_golang_host_dependencies(package_feed_path: str) -> None:
+    """将官方 feed 的同版本 Go host 依赖映射到替换后的工具链。"""
+    makefile_path = os.path.join(package_feed_path, "lang", "golang", "golang", "Makefile")
+    with open(makefile_path, encoding="utf-8") as f:
+        version = re.search(r"^GO_VERSION_MAJOR_MINOR:=(\d+\.\d+)\s*$", f.read(), re.MULTILINE)
+    if not version:
+        msg = "无法识别替换后的 Go 工具链版本"
+        raise RuntimeError(msg)
+
+    dependency = f"golang{version.group(1)}/host"
+    pattern = re.compile(r"(?<![\w.-])" + re.escape(dependency) + r"(?![\w/.-])")
+    for root, _dirs, files in os.walk(package_feed_path):
+        if "Makefile" not in files:
+            continue
+        path = os.path.join(root, "Makefile")
+        with open(path, encoding="utf-8") as f:
+            content = f.read()
+        updated = pattern.sub("golang/host", content)
+        if updated != content:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(updated)
+            logger.info("修复 %s 的 %s 依赖为 golang/host", path, dependency)
+
+
 def parse_configs() -> dict[str, dict[str, Any]]:
     """解析配置文件"""
     configs: dict[str, dict] = {}
@@ -458,6 +482,7 @@ def prepare_cfg(config: dict[str, Any],
     shutil.copytree(cloned_repos[get_repo_key("https://github.com/sbwml/packages_lang_golang",
                                               config["openwrtext"]["golang_version"],
                                               config["source_pins"].get("packages_lang_golang_commit"))], golang_path)
+    fix_versioned_golang_host_dependencies(os.path.join(openwrt.path, "feeds", "packages"))
     openwrt.feed_install()
     # 修复问题
     openwrt.fix_problems()
