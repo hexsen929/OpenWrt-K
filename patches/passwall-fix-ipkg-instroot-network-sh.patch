@@ -1,12 +1,9 @@
 --- a/root/usr/share/passwall/utils.sh
 +++ b/root/usr/share/passwall/utils.sh
-@@ -14,8 +14,9 @@
- TMP_ROUTE_PATH=${TMP_PATH}/route
- TMP_SCRIPT_FUNC_PATH=${TMP_PATH}/script_func
- RULES_PATH=/usr/share/${CONFIG}/rules
-+ROOT="${IPKG_INSTROOT:-${ROOT:-}}"
+@@ -33,5 +33,6 @@
  
 -. /lib/functions/network.sh
++ROOT="${IPKG_INSTROOT:-${ROOT:-}}"
 +. "${ROOT}/lib/functions/network.sh"
  
  echolog() {

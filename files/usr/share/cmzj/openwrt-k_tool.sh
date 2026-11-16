@@ -86,7 +86,104 @@ github_check_failed(){
     exit 1
 }
 
+# APK package names and versions both contain hyphens. Use the machine-readable
+# manifest output rather than splitting apk list's human-readable package names.
+detect_package_manager() {
+    if command -v apk >/dev/null 2>&1; then
+        PACKAGE_MANAGER=apk
+    elif command -v opkg >/dev/null 2>&1; then
+        PACKAGE_MANAGER=opkg
+    else
+        echo "错误：未找到 apk 或 opkg" >&2
+        return 1
+    fi
+}
+
+list_installed_packages() {
+    case "$PACKAGE_MANAGER" in
+        apk)
+            package_list=$(apk list --installed --manifest) || return 1
+            printf '%s\n' "$package_list" | awk 'NF == 2 { print $1 " - " $2 }'
+            ;;
+        opkg)
+            opkg list-installed
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+package_installed() {
+    case "$PACKAGE_MANAGER" in
+        apk) apk info --exists "$1" >/dev/null 2>&1 ;;
+        opkg)
+            package_status=$(opkg status "$1" 2>/dev/null) || return 1
+            printf '%s\n' "$package_status" | grep -q '^Status: .* installed$'
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+package_version_is_newer() {
+    case "$PACKAGE_MANAGER" in
+        apk) [ "$(apk version --test "$1" "$2")" = '<' ] ;;
+        opkg) opkg compare-versions "$1" lt "$2" ;;
+        *) return 1 ;;
+    esac
+}
+
+find_package_updates() {
+    awk -F ' - ' '
+        NR == FNR { if (NF == 2) installed[$1] = $2; next }
+        NF == 2 && ($1 in installed) && installed[$1] != $2 &&
+            $1 != "kernel" && $1 !~ /^kmod-/ {
+            print $1, installed[$1], $2
+        }
+    ' "$1" "$2" | while read -r package_name installed_version available_version; do
+        if package_version_is_newer "$installed_version" "$available_version"; then
+            printf '%s - %s\n' "$package_name" "$available_version"
+        fi
+    done
+}
+
+select_package_entries() {
+    awk -F ' - ' -v manager="$PACKAGE_MANAGER" '
+        NR == FNR { if (NF == 2) versions[$1] = $2; next }
+        {
+            entry = $0
+            if (entry ~ /^\// || entry ~ /(^|\/)\.\.(\/|$)/) next
+            basename = entry
+            sub(/^.*\//, "", basename)
+            for (name in versions) {
+                if ((manager == "apk" && basename == name "-" versions[name] ".apk") ||
+                    (manager == "opkg" && index(basename, name "_" versions[name] "_") == 1 && basename ~ /\.ipk$/)) {
+                    print entry
+                    break
+                }
+            }
+        }
+    ' "$1" "$2"
+}
+
+install_local_packages() {
+    case "$PACKAGE_MANAGER" in
+        apk)
+            set -- "$1"/*.apk
+            [ -f "$1" ] || return 1
+            # Keep signature verification enabled. A release signed by another
+            # build key must be installed through a full firmware upgrade.
+            apk add --upgrade "$@"
+            ;;
+        opkg)
+            set -- "$1"/*.ipk
+            [ -f "$1" ] || return 1
+            opkg install "$@"
+            ;;
+        *) return 1 ;;
+    esac
+}
+
 update_rule(){
+    detect_package_manager || exit 1
     check_github
     if ! type base64;then
         echo "错误:未检测到依赖的包base64" 
@@ -96,7 +193,7 @@ update_rule(){
         echo "错误:未检测到依赖的包sed" 
         exit 1
     fi
-    if [ "$( opkg list-installed 2>/dev/null| grep -c "^aria2")" -ne '0' ];then
+    if package_installed aria2; then
         echo "开始更新aria2 BT Tracker" 
         export bt_tracker="$(curl -s -L --retry 3 --connect-timeout 20 https://github.com/XIU2/TrackersListCollection/raw/master/all_aria2.txt || curl  -s -L --retry 3 https://cf.trackerslist.com/all_aria2.txt)"
         if [ -z $bt_tracker ];then
@@ -109,7 +206,7 @@ update_rule(){
     else
         echo "未检测到aria2，跳过更新aria2 BT Tracker" 
     fi
-    if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-adguardhome")" -ne '0' ] && [ "$( opkg list-installed 2>/dev/null| grep -c "^smartdns")" -ne '0' ];then
+    if package_installed luci-app-adguardhome && package_installed smartdns; then
         echo "开始更新adguardhome上游 DNS 服务器分流规则（/etc/AdGuardHome-dnslist(by cmzj).yaml)" 
         mkdir -p $TMPDIR/update/rule/adguardhome
         cd $TMPDIR/update/rule/adguardhome
@@ -121,7 +218,7 @@ update_rule(){
     else
         echo "未检测到luci-app-adguardhome与smartdns或其中之一，跳过更新adguardhome上游 DNS 服务器分流规则" 
     fi
-    if [ "$( opkg list-installed 2>/dev/null| grep -c "^luci-app-openclash")" -ne '0' ] ;then
+    if package_installed luci-app-openclash; then
         echo "开始更新openclash直连规则(by 沉默の金)与代理规则(by 沉默の金)"
         mkdir -p $TMPDIR/update/rule/openclash
         cd $TMPDIR/update/rule/openclash
@@ -173,12 +270,9 @@ download_failed() {
 }
 
 update_package() {
+    detect_package_manager || exit 1
     if ! type sed;then
         echo "错误:未检测到依赖的包sed" 
-        exit 1
-    fi
-    if ! type diff;then
-        echo "错误:未检测到依赖的包diffutils" 
         exit 1
     fi
     if ! type unzip;then
@@ -189,7 +283,10 @@ update_package() {
     mkdir -p $TMPDIR/update/package
     cd $TMPDIR/update/package
     [[ -d $TMPDIR ]] && rm -rf $TMPDIR/update/package/* || exit 1
-    opkg list-installed > installed.list
+    list_installed_packages > installed.list || {
+        echo "错误：无法读取已安装软件包"
+        exit 1
+    }
     if  [ ! -e "/etc/openwrt-k_info" ]; then
         echo "错误：未找到openwrt-k_info"
         exit 1
@@ -206,19 +303,13 @@ update_package() {
     latest_ver="$(curl -s https://api.github.com/repos/$REPOSITORY/releases 2>/dev/null | grep -E 'tag_name' | grep "$TAG_SUFFIX" | sed -e 's/    "tag_name": "//' -e 's/",//' | sed -n '1p')"
     FILE_NAME=$(curl -s "https://api.github.com/repos/$REPOSITORY/releases/tags/$latest_ver"| grep -E 'name'| grep -E '\.manifest'| sed -e 's/      "name": "//' -e 's/",//' | sed -n '1p')
     curl -L --retry 3 --connect-timeout 20 $REPOSITORY_URL/releases/download/${latest_ver}/$FILE_NAME -o package.list || download_failed
-    if ! diff installed.list package.list -y -W 80 -B -b | grep  '|' |sed -e "s/^/update:/g" -e 's/|/>/g' -e "/kmod-/d" > update.list; then
+    find_package_updates installed.list package.list > update_package.list
+    if [ ! -s update_package.list ]; then
         echo "没有可更新的包"
         exit 0
-    else
-        if [ -z "$(cat update.list)" ]; then
-            echo "没有可更新的包"
-            exit 0  
-        else
-            echo "将更新以下包："
-            cat update.list
-            diff installed.list package.list -y -W 80 -B -b | grep  '|' | sed -e "s/ -.*//g" -e "s/ //g" -e "s/$/_/g" > update_package.list
-        fi
     fi
+    echo "将更新以下包（内核与内核模块请通过固件升级更新）："
+    cat update_package.list
     echo "这将下载releases中的package.zip请确保你有足够的空间与良好的网络"
     read -n1 -p "是否继续 [Y/N]?" answer
     case "$answer" in
@@ -254,14 +345,24 @@ update_package() {
         ;;
     esac
     [[ -d /usr/share/cmzj/download/ ]] && rm -rf /usr/share/cmzj/download/*
-    curl -L --retry 3 --connect-timeout 20 $REPOSITORY_URL/releases/download/${latest_ver}/packages.zip -o $DOWNLOAD_PATH || download_failed
-    unzip -l $DOWNLOAD_PATH |grep "-"|grep ":"|grep " "|sed "s/.*[0-9][0-9]-[0-9]\{1,2\}-[0-9]\{1,5\} [0-9]\{1,2\}:[0-9]\{1,2\}   //g"|sed "s/ //g" > newpackage.list
-    unzip $DOWNLOAD_PATH $(grep "$(cat update_package.list)" newpackage.list | sed ':label;N;s/\n/ /;b label') -d $TMPDIR/update/package
-    rm -rf /usr/share/cmzj/download $TMPDIR/update/package/download
-    if opkg install $TMPDIR/update/package/package/* ; then
-        echo "安装成功"        
+    curl -fL --retry 3 --connect-timeout 20 "$REPOSITORY_URL/releases/download/${latest_ver}/packages.zip" -o "$DOWNLOAD_PATH" || download_failed
+    unzip -l "$DOWNLOAD_PATH" > archive.list || exit 1
+    awk '$1 ~ /^[0-9]+$/ && $4 ~ /\.(apk|ipk)$/ { print $4 }' archive.list > newpackage.list
+    select_package_entries update_package.list newpackage.list > selected.list
+    if [ ! -s selected.list ]; then
+        echo "归档中没有匹配的软件包，请通过固件升级更新"
+        exit 1
+    fi
+    mkdir -p "$TMPDIR/update/package/install"
+    while IFS= read -r entry; do
+        unzip -p "$DOWNLOAD_PATH" "$entry" > "$TMPDIR/update/package/install/${entry##*/}" || exit 1
+    done < selected.list
+    rm -rf /usr/share/cmzj/download "$TMPDIR/update/package/download"
+    if install_local_packages "$TMPDIR/update/package/install"; then
+        echo "安装成功；归档未包含的软件包请通过固件升级更新"
     else
-        echo "安装失败"
+        echo "安装失败；若提示签名或依赖不匹配，请通过固件升级更新"
+        exit 1
     fi
 }
 
@@ -286,14 +387,14 @@ update_tool() {
         exit 1
         ;;
     esac
-    curl -L --retry 3 --connect-timeout 20 https://raw.githubusercontent.com/chenmozhijin/OpenWrt-K/main/files/usr/share/cmzj/openwrt-k_tool.sh -o $TMPDIR/openwrt-k_tool.sh || download_failed
+    curl -fL --retry 3 --connect-timeout 20 https://raw.githubusercontent.com/hexsen929/OpenWrt-K/main/files/usr/share/cmzj/openwrt-k_tool.sh -o $TMPDIR/openwrt-k_tool.sh || download_failed
     chmod +x $TMPDIR/openwrt-k_tool.sh
     mv $TMPDIR/openwrt-k_tool.sh /usr/share/cmzj/openwrt-k_tool.sh && exit 0
 }
 
 usage() {
     echo "OpenWrt-K工具"
-    echo "固件项目地址：https://github.com/chenmozhijin/OpenWrt-K"
+    echo "固件项目地址：https://github.com/hexsen929/OpenWrt-K"
     echo ""
     echo "Usage: openwrt-k <command> [<arguments>]"
     echo ""

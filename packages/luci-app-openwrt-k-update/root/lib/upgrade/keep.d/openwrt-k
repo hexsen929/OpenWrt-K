@@ -1,0 +1,5 @@
+# OpenWrt-K configurations outside the packages' standard UCI conffiles.
+# A glob also covers the DNS list file whose name contains a space.
+/etc/AdGuardHome*.yaml
+/etc/passwall/
+/usr/share/passwall/rules/

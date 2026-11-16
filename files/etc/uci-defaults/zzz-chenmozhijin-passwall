@@ -11,7 +11,8 @@ pkg_installed() {
 has_custom_passwall_config() {
   local tcp_node
   tcp_node="$(uci -q get passwall.@global[0].tcp_node)"
-  [ -n "$tcp_node" ] && [ "$tcp_node" != "myshunt" ]
+  # myshunt 也可能来自已保留的用户配置，不能据此重新初始化。
+  [ -n "$tcp_node" ]
 }
 
 sleep 5

@@ -74,10 +74,10 @@ set_adguardhome_upstreams() {
   local port2="$2"
 
   if [ -n "$port2" ]; then
-    sed -i '/upstream_dns:/,/^[a-z]/ {/upstream_dns:/!{/^[a-z]/!d}}' /etc/AdGuardHome.yaml
+    sed -i '/^  upstream_dns:/,/^  [a-z_]/ { /^  upstream_dns:/! { /^  [a-z_]/!d; }; }' /etc/AdGuardHome.yaml
     sed -i "s/upstream_dns:.*/upstream_dns:\n    - 127.0.0.1:${port1}\n    - 127.0.0.1:${port2}/" /etc/AdGuardHome.yaml
   else
-    sed -i '/upstream_dns:/,/^[a-z]/ {/upstream_dns:/!{/^[a-z]/!d}}' /etc/AdGuardHome.yaml
+    sed -i '/^  upstream_dns:/,/^  [a-z_]/ { /^  upstream_dns:/! { /^  [a-z_]/!d; }; }' /etc/AdGuardHome.yaml
     sed -i "s/upstream_dns:.*/upstream_dns:\n    - 127.0.0.1:${port1}/" /etc/AdGuardHome.yaml
   fi
   sed -i 's/upstream_dns_file:.*/upstream_dns_file:/' /etc/AdGuardHome.yaml
@@ -400,11 +400,15 @@ if pkg_installed luci-app-adguardhome; then
   uci_set_if_empty AdGuardHome.AdGuardHome.old_enabled '1'
   uci commit AdGuardHome
 
-  # 根据是否安装 mosdns 来设置上游 DNS
-  if pkg_installed mosdns; then
-    set_adguardhome_upstreams "$(uci -q get mosdns.config.listen_port || echo 5335)"
+  # 仅初始化镜像自带的原始 YAML，保留升级恢复或用户修改过的配置。
+  if sha256sum -c /usr/share/cmzj/AdGuardHome-default.sha256 >/dev/null 2>&1; then
+    if pkg_installed mosdns; then
+      set_adguardhome_upstreams "$(uci -q get mosdns.config.listen_port || echo 5335)"
+    else
+      set_adguardhome_upstreams "$(uci -q get smartdns.@smartdns[0].port || echo 6053)" "$(uci -q get smartdns.@smartdns[0].seconddns_port || echo 5335)"
+    fi
   else
-    set_adguardhome_upstreams "$(uci -q get smartdns.@smartdns[0].port || echo 6053)" "$(uci -q get smartdns.@smartdns[0].seconddns_port || echo 5335)"
+    echo "检测到已有 AdGuardHome YAML 配置，跳过默认上游 DNS 初始化"
   fi
   
   /etc/init.d/AdGuardHome restart
