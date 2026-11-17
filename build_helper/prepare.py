@@ -434,6 +434,13 @@ def prepare_cfg(config: dict[str, Any],
                 if not apply_patch(f.read(), path):
                     msg = f"{cfg_name} 应用vlmcsd APK版本号修复补丁失败"
                     raise RuntimeError(msg)
+        if pkg_name == "luci-theme-7dollar":
+            logger.info("%s为7Dollar应用保留已有主题设置补丁", cfg_name)
+            theme_patch_path = os.path.join(paths.openwrt_k, "patches", "7dollar-preserve-theme-selection.patch")
+            with open(theme_patch_path, encoding="utf-8") as f:
+                if not apply_patch(f.read(), path):
+                    msg = f"{cfg_name} 应用7Dollar主题设置兼容补丁失败"
+                    raise RuntimeError(msg)
         if pkg_name == "luci-app-passwall":
             logger.info("%s为luci-app-passwall应用ImageBuilder环境兼容补丁", cfg_name)
             passwall_patch_path = os.path.join(paths.openwrt_k, "patches", "passwall-fix-ipkg-instroot-network-sh.patch")
